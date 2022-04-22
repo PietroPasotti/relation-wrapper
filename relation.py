@@ -8,6 +8,7 @@ from functools import wraps
 from typing import (
     Any,
     Callable,
+    Dict,
     Generic,
     Iterable,
     Mapping,
@@ -22,6 +23,8 @@ try:
     from typing import Literal, Protocol
 except ImportError:  # py3.5 compatibility
     from typing_extensions import Literal, Protocol
+
+import json
 
 from ops.charm import CharmBase
 from ops.model import Application
@@ -87,6 +90,9 @@ class RelationModel:
         charm: CharmBase, relation_name: str, template: Template
     ) -> "RelationModel":
         """Guess the model from a charm's meta and a template."""
+        if not template:
+            # empty template --> empty model
+            return RelationModel()
         if relation_name in charm.meta.requires:
             return template.as_requirer_model()
         return template.as_provider_model()
@@ -121,7 +127,7 @@ class _Validator(Protocol):
     def check_field(self, key) -> Any:
         pass
 
-    def coerce(self, key, value) -> Any:
+    def deserialize(self, key, value) -> Any:
         pass
 
     def serialize(self, key, value) -> str:
@@ -141,22 +147,6 @@ def _loads(method):
 class DataclassValidator:
     """Validates data based on a dataclass model."""
 
-    @staticmethod
-    def _parse_obj_as(obj, type_):
-        try:
-            return type_(obj)
-        except:  # noqa
-            logger.error(f"cannot implicitly cast {obj} to {type_}; giving up...")
-            raise
-
-    @staticmethod
-    def _parse_raw_as(obj: str, type_):
-        try:
-            return type_(obj)
-        except:  # noqa
-            logger.error(f"cannot parse {obj} to {type_}; giving up...")
-            return obj
-
     _model = None
 
     @property
@@ -167,6 +157,14 @@ class DataclassValidator:
     @model.setter
     def model(self, value):
         self._model = value
+
+    @staticmethod
+    def _parse_obj_as(obj, type_):
+        try:
+            return type_(obj)
+        except:  # noqa
+            logger.error(f"cannot cast {obj} to {type_}; giving up...")
+            raise
 
     def validate(self, data: dict, _raise: bool = False):
         """Full schema validation: check data matches model."""
@@ -186,7 +184,7 @@ class DataclassValidator:
                 err = True
                 continue
             try:
-                self.coerce(key, value)
+                self.deserialize(key, value)
             except CoercionError as e:
                 logger.error(
                     f"{key} can't be cast to the expected type {field.type}; "
@@ -213,28 +211,29 @@ class DataclassValidator:
 
     def check_field(self, name):
         """Verify that `name` is a valid field in the schema."""
+        if not self.model:
+            return None
         field = self.model.__dataclass_fields__.get(name)
         if not field:
             raise InvalidFieldNameError(name)
         return field
 
-    def coerce(self, key, value):
-        """Coerce obj to the given field."""
-        field = self.check_field(key)
-        try:
-            return self._parse_obj_as(value, field.type)
-        except Exception as e:
-            logger.error(e)
-            raise CoercionError(key, value, field.type) from e
-
     def serialize(self, key, value) -> str:
         """Convert to string."""
+        if not self.model:
+            if isinstance(value, str):
+                return value
+            return json.dumps(value)
+
         # check that the key is a valid field
-        self.check_field(key)
-        # check that the field type matches the value
-        self.coerce(key, value)
+        field = self.check_field(key)
+        # check that the field type matches the type of the object we're dumping;
+        # otherwise we won't be able to deserialize it later.
+        if not isinstance(value, field.type):
+            raise CoercionError(
+                "cannot encode {} : {}, expected {}".format(key, value, field.type)
+            )
         # dump
-        import json
         from dataclasses import asdict, is_dataclass
 
         if is_dataclass(value):
@@ -242,10 +241,21 @@ class DataclassValidator:
 
         return json.dumps(value)
 
-    def deserialize(self, obj: str, value: str) -> Any:
+    def deserialize(self, key: str, value: str) -> Any:
         """Cast back databag content to its intended type."""
-        field = self.check_field(obj)
-        return self._parse_raw_as(value, field.type_)
+        if not self.model:
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                logger.error("unable to decode {}; returning it raw.".format(value))
+                return value
+
+        field = self.check_field(key)
+        try:
+            return self._parse_obj_as(value, field.type)
+        except Exception as e:
+            logger.error(e)
+            raise CoercionError(key, value, field.type) from e
 
 
 class PydanticValidator:
@@ -308,6 +318,9 @@ class PydanticValidator:
     @_loads
     def check_field(self, name):
         """Verify that `name` is a valid field in the schema."""
+        if not self.model:
+            return None
+
         field = self.model.__fields__.get(name)
         if not field:
             raise InvalidFieldNameError(name)
@@ -326,6 +339,9 @@ class PydanticValidator:
     @_loads
     def serialize(self, key, value) -> str:
         """Convert value to string."""
+        if not self.model:
+            return json.dumps(value)
+
         # check that the key is a valid field
         self.check_field(key)
         # check that the field type matches the value
@@ -333,13 +349,18 @@ class PydanticValidator:
         # dump
         if isinstance(value, self._BaseModel):
             return value.json()
-        import json
-
         return json.dumps(value)
 
     @_loads
     def deserialize(self, obj: str, value: str) -> Any:
         """Cast databag contents back to its model-given type."""
+        if not self.model:
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                logger.error("unable to decode {}; returning it raw.".format(value))
+                return value
+
         field = self.check_field(obj)
         return self._parse_raw_as(field.type_, value)
 
@@ -416,7 +437,7 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
         self._validator.check_field(item)
         value = self._data[item]
         # coerce value to the type specified by the field
-        obj = self._validator.coerce(item, value)
+        obj = self._validator.deserialize(item, value)
         return obj
 
     @_needs_write_permission
@@ -707,7 +728,7 @@ class Relations(_RelationBase):
         return self.relations[0].local_app_data  # any will do
 
     @property
-    def remote_apps_data(self) -> Mapping[Application, DataWrapper[Any]]:
+    def remote_apps_data(self) -> Dict[Application, DataWrapper[Any]]:
         """Get the data from the `remote_apps` side of the relation."""
         return {r.remote_app: r.remote_app_data for r in self.relations}
 
@@ -719,7 +740,7 @@ class Relations(_RelationBase):
         return self.relations[0].local_unit_data  # any will do
 
     @property
-    def remote_units_data(self) -> Mapping[Unit, DataWrapper[Any]]:
+    def remote_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
         """Get the data from the `remote_units` side of the relation."""
         data = {}
         for r in self.relations:

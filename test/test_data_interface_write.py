@@ -201,10 +201,10 @@ def test_local_app_data_write_permissions(harness, relations, leader):
     assert relations.local_app_data.can_write == leader
     # can write local app only if leader
     if leader:
-        relations.local_app_data['foo'] = '41'
+        relations.local_app_data['foo'] = 41
     else:
         with pytest.raises(CannotWriteError):
-            relations.local_app_data['foo'] = '41'
+            relations.local_app_data['foo'] = 41
 
 
 @pytest.mark.parametrize('leader', ((True, False)))
