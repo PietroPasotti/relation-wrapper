@@ -107,6 +107,15 @@ def test_data_write_valid_data(harness, relation_id, relations):
     assert relations.valid
 
 
+@pytest.mark.xfail  # not implemented yet
+def test_write_data_setattr(harness, relation_id, relations):
+    harness.set_leader(True)
+    assert not harness.get_relation_data(relation_id, LOCAL_APP).get('foo')
+    relations.relations[0].local_app_data.foo = 41
+    assert harness.get_relation_data(relation_id, LOCAL_APP)['foo'] == '41'
+    assert relations.relations[0].local_app_data.foo == 41
+
+
 def test_data_overwrite_valid_data(harness, relation_id, relations):
     harness.set_leader(True)
     # set it up with valid data
