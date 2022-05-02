@@ -2,8 +2,9 @@
 
 import collections
 import dataclasses
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import MISSING, Field, dataclass, is_dataclass
 from functools import wraps
 from typing import (
     Any,
@@ -19,24 +20,20 @@ from typing import (
     Union,
 )
 
-try:
-    from typing import Literal, Protocol
-except ImportError:  # py3.5 compatibility
-    from typing_extensions import Literal, Protocol
-
-import json
-
 from ops.charm import CharmBase
+from ops.framework import Object
 from ops.model import Application
 from ops.model import Model as OpsModel
 from ops.model import Relation as OpsRelation
 from ops.model import Unit
+from typing_extensions import Literal, Protocol
 
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 M = TypeVar("M")
-Model = Any
+
+Model = Any  # dataclass or pydantic model
 ModelName = Literal["local_app", "remote_app", "local_unit", "remote_unit"]
 Models = Mapping[ModelName, Optional[Any]]
 UnitOrApplication = Union[Unit, Application]
@@ -48,6 +45,32 @@ class DataBagModel:
 
     app: Type[Model] = None
     unit: Type[Model] = None
+
+    def to_dict(self) -> dict:
+        """Convert to dict."""
+
+        def _to_dict(cls: Type):
+            try:
+                import pydantic
+
+                if isinstance(cls, pydantic.BaseModel):
+                    return cls.dict()
+            except ModuleNotFoundError:
+                pass
+
+            if is_dataclass(cls):
+                dct = {}
+                for field_name, field in cls.__dataclass_fields__.items():
+                    if is_dataclass(field.type):
+                        serialized = _to_dict(field.type)
+                    else:
+                        serialized = str(field.type.__name__)
+                    dct[field_name] = serialized
+                return dct
+
+            raise TypeError(f"Cannot serialize {cls}")
+
+        return {"app": self.app.to_dict(), "unit": self.app.to_dict()}
 
 
 @dataclass
@@ -74,6 +97,13 @@ class Template:
             remote_app_data_model=self.requirer.app if self.requirer else None,
             remote_unit_data_model=self.requirer.unit if self.requirer else None,
         )
+
+    def to_dict(self) -> dict:
+        """Convert to dict."""
+        return {
+            "requirer": self.requirer.to_dict(),
+            "provider": self.provider.to_dict(),
+        }
 
 
 @dataclass
@@ -176,7 +206,7 @@ class DataclassValidator:
 
         for key, value in data.items():
             try:
-                field: dataclasses.Field = self.check_field(key)
+                field: Field = self.check_field(key)
             except InvalidFieldNameError as e:
                 logger.error(
                     f"{key} is an invalid field name; value={value}; error={e}"
@@ -195,7 +225,7 @@ class DataclassValidator:
 
         missing_data = False
         for name, field in model.__dataclass_fields__.items():
-            if name not in data and field.default is dataclasses.MISSING:
+            if name not in data and field.default is MISSING:
                 missing_data = True
 
         if missing_data:
@@ -509,6 +539,10 @@ class Relation(_RelationBase):
         self._remote_units: Tuple[Unit] = tuple(relation.units)
         self._remote_app: Application = relation.app
 
+    def wraps(self, relation: OpsRelation):
+        """Check if this Relation wraps the provided ops.Relation object."""
+        return relation is self._relation
+
     @property
     def relation(self) -> OpsRelation:
         """Get the underlying `ops.Relation` object."""
@@ -607,7 +641,7 @@ def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
     return out
 
 
-class Relations(_RelationBase):
+class Relations(_RelationBase, Object):
     """Encapsulates the relation between the local application and a remote one.
     Usage:
 
@@ -646,7 +680,8 @@ class Relations(_RelationBase):
     ):
         """Initialize."""
         model = RelationModel.from_charm(charm, relation_name, template)
-        super().__init__(charm, relation_name, model=model)
+        _RelationBase.__init__(self, charm, relation_name, model=model)
+        Object.__init__(self, charm, relation_name + "_wrapper")
         self._validator = validator
 
         # register all provided event handlers
@@ -657,11 +692,30 @@ class Relations(_RelationBase):
             "relation_departed": on_departed,
             "relation_created": on_created,
         }
+
         for name, handler in event_handlers.items():
             if not handler:
                 continue
             event = getattr(charm.on[relation_name], name)
             charm.framework.observe(event, handler)
+
+        charm.framework.observe(
+            charm.on[relation_name].relation_created, self.publish_defaults
+        )
+
+    def publish_defaults(self, event):
+        """Publish default unit and app data to local databags.
+
+        Should be called once a relation is created.
+        """
+        relation = self.wrap(event.relation)
+        if self._charm.unit.is_leader():
+            self._publish_defaults(relation.local_app_data)
+        self._publish_defaults(relation.local_unit_data)
+
+    def wrap(self, relation: OpsRelation) -> Relation:
+        """Get the Relation wrapper object from an ops Relation object."""
+        return next(filter(lambda R: R.wraps(relation), self.relations))
 
     @property
     def _relations(self) -> Tuple[OpsRelation, ...]:
@@ -696,14 +750,14 @@ class Relations(_RelationBase):
         """Whether the `local_unit` side of this relation is valid."""
         if not self.relations:
             return True
-        return self.relations[0].local_unit_valid  # any will do
+        return get_worst_case(map(lambda r: r.local_unit_valid, self.relations))
 
     @property
     def local_app_valid(self):
         """Whether the `local_app` side of this relation is valid."""
         if not self.relations:
             return True
-        return self.relations[0].local_app_valid  # any will do
+        return get_worst_case(map(lambda r: r.local_app_valid, self.relations))
 
     @property
     def remote_valid(self):
@@ -721,11 +775,11 @@ class Relations(_RelationBase):
         return get_worst_case(map(lambda r: r.valid, self.relations))
 
     @property
-    def local_app_data(self) -> DataWrapper[Any]:
-        """Get the data from the `local_app` side of the relation."""
+    def local_app_data(self) -> Dict[Application, DataWrapper[Any]]:
+        """Map remote apps to the `local_app` side of the relation."""
         if not self.relations:
             return {}
-        return self.relations[0].local_app_data  # any will do
+        return {r.remote_app: r.local_app_data for r in self.relations}
 
     @property
     def remote_apps_data(self) -> Dict[Application, DataWrapper[Any]]:
@@ -733,11 +787,11 @@ class Relations(_RelationBase):
         return {r.remote_app: r.remote_app_data for r in self.relations}
 
     @property
-    def local_unit_data(self) -> DataWrapper[Any]:
-        """Get the data from the `local_unit` side of the relation."""
+    def local_unit_data(self) -> Dict[Application, DataWrapper[Any]]:
+        """Map remote apps to the `local_unit` side of the relation."""
         if not self.relations:
             return {}
-        return self.relations[0].local_unit_data  # any will do
+        return {r.remote_app: r.local_unit_data for r in self.relations}
 
     @property
     def remote_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
@@ -746,3 +800,40 @@ class Relations(_RelationBase):
         for r in self.relations:
             data.update(r.remote_units_data)
         return data
+
+    @staticmethod
+    def _publish_defaults(data: DataWrapper[Any]):
+        """Write the databags with the template defaults."""
+        if isinstance(data, dict):
+            return
+
+        assert data.can_write
+        if model := data._model:
+            defaults = get_defaults(model)
+            for key, value in defaults.items():
+                data[key] = value
+
+
+def get_defaults(model):
+    """Get all defaulted fields from the model."""
+    # TODO Handle recursive models.
+    if is_dataclass(model):
+        return _get_dataclass_defaults(model)
+    else:
+        return _get_pydantic_defaults(model)
+
+
+def _get_dataclass_defaults(model):
+    return {
+        field.name: field.default
+        for field in model.__dataclass_fields__.values()
+        if field.default is not dataclasses.MISSING
+    }
+
+
+def _get_pydantic_defaults(model):
+    return {
+        field.name: field.default
+        for field in model.__fields__.values()
+        if field.default
+    }

@@ -2,39 +2,43 @@ from itertools import chain
 
 import pytest
 import yaml
+from conftest import (
+    ProviderAppModel,
+    ProviderUnitModel,
+    RequirerAppModel,
+    RequirerUnitModel,
+    bar_template,
+    mock_relation_data,
+    reinit_charm,
+)
 from ops.charm import CharmBase
 from ops.testing import Harness
-from conftest import RequirerAppModel, RequirerUnitModel, \
-    ProviderAppModel, ProviderUnitModel, bar_template, reinit_charm, \
-    mock_relation_data
+
 from relation import Relations
 
-RELATION_NAME = 'foo'
-LOCAL_APP = 'local'
-LOCAL_UNIT = 'local/0'
-REMOTE_APP = 'remote'
-REMOTE_UNIT = 'remote/0'
+RELATION_NAME = "foo"
+LOCAL_APP = "local"
+LOCAL_UNIT = "local/0"
+REMOTE_APP = "remote"
+REMOTE_UNIT = "remote/0"
 
 
 class RequirerCharm(CharmBase):
     META = yaml.safe_dump(
-        {
-            'name': LOCAL_APP,
-            'requires': {
-                RELATION_NAME: {
-                    'interface': 'bar'
-                }
-            }
-        }
+        {"name": LOCAL_APP, "requires": {RELATION_NAME: {"interface": "bar"}}}
     )
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = Relations(self, 'foo', bar_template,
-                             on_joined=self._handle,
-                             on_broken=self._handle,
-                             on_departed=self._handle,
-                             on_changed=self._handle)
+        self.foo = Relations(
+            self,
+            "foo",
+            bar_template,
+            on_joined=self._handle,
+            on_broken=self._handle,
+            on_departed=self._handle,
+            on_changed=self._handle,
+        )
 
     def _handle(self, event):
         pass
@@ -82,13 +86,16 @@ def test_data_read_no_data(relations):
     assert relations.remote_units_data
     assert relations.remote_apps_data
     # however they are empty:
-    for value in chain(relations.remote_apps_data.values(),
-                       relations.remote_units_data.values()):
+    for value in chain(
+        relations.remote_apps_data.values(), relations.remote_units_data.values()
+    ):
         assert value == {}
 
     # local app and unit data are empty
-    assert relations.local_app_data == {}
-    assert relations.local_unit_data == {}
+    for value in relations.local_app_data.values():
+        assert value == {}
+    for value in relations.local_unit_data.values():
+        assert value == {}
 
 
 def test_data_validation_no_data(relations):
@@ -104,10 +111,11 @@ def test_data_validation_no_data(relations):
 
 def test_data_validation_some_data(harness, relation_id, relations):
     mock_relation_data(
-        harness, relation_id,
+        harness,
+        relation_id,
         {
-            REMOTE_UNIT: {'bar': 42.42},
-        }
+            REMOTE_UNIT: {"bar": 42.42},
+        },
     )
 
     assert relations.remote_apps_valid is True  # There is no data, and we expect none
@@ -121,10 +129,11 @@ def test_data_validation_some_data(harness, relation_id, relations):
 
 def test_data_validation_bad_data(harness, relation_id, relations):
     mock_relation_data(
-        harness, relation_id,
+        harness,
+        relation_id,
         {
-            REMOTE_UNIT: {'bar': 'invalid data'},
-        }
+            REMOTE_UNIT: {"bar": "invalid data"},
+        },
     )
 
     assert relations.remote_apps_valid is True  # There is no data, and we expect none
@@ -138,11 +147,12 @@ def test_data_validation_bad_data(harness, relation_id, relations):
 
 def test_data_validation_good_data(harness, relation_id, relations):
     mock_relation_data(
-        harness, relation_id,
+        harness,
+        relation_id,
         {
-            LOCAL_APP: {'foo': 42},
-            REMOTE_UNIT: {'bar': 42.42},
-        }
+            LOCAL_APP: {"foo": 42},
+            REMOTE_UNIT: {"bar": 42.42},
+        },
     )
 
     assert relations.remote_apps_valid is True  # There is no data, and we expect none
@@ -156,33 +166,35 @@ def test_data_validation_good_data(harness, relation_id, relations):
 
 def test_invalid_data_read(harness, relation_id, relations):
     mock_relation_data(
-        harness, relation_id,
+        harness,
+        relation_id,
         {
-            LOCAL_APP: {'foo': 'invalid data'},
-        }
+            LOCAL_APP: {"foo": "invalid data"},
+        },
     )
 
     assert relations.valid is False
     # even though it's invalid, we can still read it
-    assert relations.local_app_data == {'foo': 'invalid data'}
-    assert relations.local_unit_data == {}
+    assert relations.relations[0].local_app_data == {"foo": "invalid data"}
+    assert relations.relations[0].local_unit_data == {}
 
 
 def test_valid_data_read(harness, relation_id, relations):
     mock_relation_data(
-        harness, relation_id,
+        harness,
+        relation_id,
         {
-            LOCAL_APP: {'foo': 42},
-            REMOTE_UNIT: {'bar': 42.42},
-        }
+            LOCAL_APP: {"foo": 42},
+            REMOTE_UNIT: {"bar": 42.42},
+        },
     )
 
-    assert relations.local_app_data == {'foo': 42}
-    assert relations.local_unit_data == {}
+    assert relations.relations[0].local_app_data == {"foo": 42}
+    assert relations.relations[0].local_unit_data == {}
 
     ops_relation = relations._relations[0]
     remote_app = ops_relation.app
     remote_unit = list(ops_relation.units)[0]
 
     assert relations.remote_apps_data[remote_app] == {}
-    assert relations.remote_units_data[remote_unit] == {'bar': 42.42}
+    assert relations.remote_units_data[remote_unit] == {"bar": 42.42}
