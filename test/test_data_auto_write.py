@@ -11,7 +11,7 @@ from endpoint_wrapper import (
     CoercionError,
     DataBagModel,
     InvalidFieldNameError,
-    Relations,
+    EndpointWrapper,
     Template,
     ValidationError,
     _get_dataclass_defaults,
@@ -86,7 +86,7 @@ def charm(template):
 
         def __init__(self, *args):
             super().__init__(*args)
-            self.foo = Relations(self, "foo", template)
+            self.foo = EndpointWrapper(self, "foo", template)
 
     return MyCharm
 

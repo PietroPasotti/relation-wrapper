@@ -10,8 +10,8 @@ from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
     InvalidFieldNameError,
-    Relations,
-    ValidationError,
+    EndpointWrapper,
+    ValidationError, _EndpointWrapper,
 )
 
 RELATION_NAME = "foo"
@@ -28,7 +28,7 @@ class RequirerCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = Relations(
+        self.foo = EndpointWrapper(
             self,
             "foo",
             bar_template,
@@ -67,7 +67,7 @@ def charm(harness, setup_relation) -> RequirerCharm:
 
 
 @pytest.fixture
-def relations(charm) -> Relations:
+def relations(charm) -> _EndpointWrapper:
     return charm.foo
 
 

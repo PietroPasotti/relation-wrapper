@@ -97,7 +97,7 @@ class DataBagModel:
 
 
 @dataclass
-class Template:
+class _Template:
     """Data template for requirer and provider sides of an integration."""
 
     requirer: Optional[DataBagModel] = None
@@ -140,7 +140,7 @@ class RelationModel:
 
     @staticmethod
     def from_charm(
-        charm: CharmBase, relation_name: str, template: Template = None
+        charm: CharmBase, relation_name: str, template: _Template = None
     ) -> "RelationModel":
         """Guess the model from a charm's meta and a template."""
         if not template:
@@ -444,7 +444,7 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
     def __init__(
         self,
         relation: OpsRelation,
-        entity: UnitOrApplication,
+        entity: 'UnitOrApplication',
         model: 'Model',
         validator: '_Validator',
         can_write: bool = False,
@@ -674,8 +674,8 @@ class _EndpointWrapper(_RelationBase, Object):
         self,
         charm: CharmBase,
         relation_name: str,
-        template: Template = None,
-        role: Role = None,
+        template: _Template = None,
+        role: 'Role' = None,
         validator: Type['_Validator'] = DEFAULT_VALIDATOR,
         **kwargs
     ):
@@ -848,23 +848,23 @@ def EndpointWrapper(*args, **kwargs):
     return _EndpointWrapper(*args, **kwargs)
 
 
-def make_template(
-    requirer_unit_model=None,
-    requirer_app_model=None,
-    provider_unit_model=None,
-    provider_app_model=None,
-    requirer=None,
-    provider=None
+def Template(
+    # requirer_unit_model=None,
+    # requirer_app_model=None,
+    # provider_unit_model=None,
+    # provider_app_model=None,
+    requirer: DataBagModel = None,
+    provider: DataBagModel = None
 ):
-    def _coalesce(main, app, unit):
-        if main:
-            if unit or app:
-                raise ValueError(
-                    'invalid usage: make_template called with both a '
-                    'DataBagModel and some specific unit/app model.'
-                )
-            return main
-        return DataBagModel(app, unit)
-    _requirer = _coalesce(requirer, requirer_app_model, requirer_unit_model)
-    _provider = _coalesce(provider, provider_app_model, provider_unit_model)
-    return Template(requirer=_requirer, provider=_provider)
+    # def _coalesce(main, app, unit):
+    #     if main:
+    #         if unit or app:
+    #             raise ValueError(
+    #                 'invalid usage: make_template called with both a '
+    #                 'DataBagModel and some specific unit/app model.'
+    #             )
+    #         return main
+    #     return DataBagModel(app, unit)
+    # _requirer = _coalesce(requirer, requirer_app_model, requirer_unit_model)
+    # _provider = _coalesce(provider, provider_app_model, provider_unit_model)
+    return _Template(requirer=requirer, provider=provider)

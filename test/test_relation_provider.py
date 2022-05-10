@@ -11,7 +11,7 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import Relations
+from endpoint_wrapper import EndpointWrapper, _EndpointWrapper
 
 RELATION_NAME = "foo"
 
@@ -23,7 +23,7 @@ class ProviderCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = Relations(
+        self.foo = EndpointWrapper(
             self,
             "foo",
             bar_template,
@@ -59,7 +59,7 @@ def provider_charm(provider_harness) -> ProviderCharm:
 
 
 @pytest.fixture
-def provider_relations(provider_charm) -> Relations:
+def provider_relations(provider_charm) -> _EndpointWrapper:
     return provider_charm.foo
 
 

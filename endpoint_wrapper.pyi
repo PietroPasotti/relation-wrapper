@@ -1,13 +1,9 @@
-import collections
-from enum import Enum
 from typing import Any, Generic, Literal, TypeVar, overload, Type, Callable, \
     Protocol, Mapping, Optional, Union, Iterable, Tuple, Dict, List
 
 from ops.charm import CharmBase
-from ops.framework import Object
 from ops.model import Relation as OpsRelation, Application, Unit
 
-# fixme avoid duplication of Role and _Validator
 Role = Literal["requirer", "provider"]
 
 _A = TypeVar("_A")
@@ -15,23 +11,27 @@ _B = TypeVar("_B")
 _C = TypeVar("_C")
 _D = TypeVar("_D")
 
-_U = TypeVar("_U")
+_DMReq = TypeVar("_DMReq", bound=_DataBagModel)
+_DMProv = TypeVar("_DMProv", bound=_DataBagModel)
 
-_DMReq = TypeVar("_DMReq", bound="DataBagModel")
-_DMProv = TypeVar("_DMProv", bound="DataBagModel")
-_DM = TypeVar("_DM", bound="DataBagModel")
-
-class DataBagModel:
-    app: Optional[Type[Any]]
-    unit: Optional[Type[Any]]
+class _DataBagModel(Generic[_A, _B]):
+    app: Optional[_A]
+    unit: Optional[_B]
     def to_dict(self) -> dict: ...
     def __init__(self, app, unit) -> None: ...
 
-class Template:
-    requirer: Optional[DataBagModel]
-    provider: Optional[DataBagModel]
-    def as_requirer_model(self) -> RelationModel: ...
-    def as_provider_model(self) -> RelationModel: ...
+@overload
+def DataBagModel(app:_A, unit:_B) -> _DataBagModel[_A, _B]:...
+@overload
+def DataBagModel(app:_A) -> _DataBagModel[_A, None]:...
+@overload
+def DataBagModel(unit:_B) -> _DataBagModel[None, _B]:...
+
+class _Template(Generic[_DMProv, _DMReq]):
+    provider: Optional[_DMProv]
+    requirer: Optional[_DMReq]
+    def as_requirer_model(self) -> RelationModel: ...  # unimportant to define _A, _B, _C, _D here...
+    def as_provider_model(self) -> RelationModel: ...  # unimportant to define _A, _B, _C, _D here...
     def to_dict(self) -> dict: ...
     def __init__(self, requirer, provider) -> None: ...
 
@@ -41,7 +41,7 @@ class RelationModel(Generic[_A, _B, _C, _D]):
     local_unit_data_model: _C
     remote_unit_data_model: _D
     @staticmethod
-    def from_charm(charm: CharmBase, relation_name: str, template: Template = ...) -> RelationModel: ...
+    def from_charm(charm: CharmBase, relation_name: str, template: _Template = ...) -> RelationModel: ...
     def get(self, name): ...
     def __init__(self, local_app_data_model, remote_app_data_model, local_unit_data_model, remote_unit_data_model) -> None: ...
 
@@ -63,12 +63,17 @@ class _Validator(Protocol):
     def serialize(self, key, value) -> str: ...
     def deserialize(self, obj: str, value: str) -> Any: ...
 
-_ValidatorType = TypeVar('_ValidatorType', bound=_Validator)
 
 class DataclassValidator(_Validator):
+    _parse_obj_as: Callable[[Type, Any], str]
+    _parse_raw_as: Callable[[Type, str], Any]
+    _model: Any
     model: Any
 
 class PydanticValidator(_Validator):
+    _parse_obj_as: Callable[[Type, Any], str]
+    _parse_raw_as: Callable[[Type, str], Any]
+    _model: Any
     model: Any
     _BaseModel: Type
     _PydanticValidationError: Type[BaseException]
@@ -86,6 +91,7 @@ class DataWrapper(Generic[T]):
     def __init__(self, relation: OpsRelation, entity: UnitOrApplication, model: Any, validator: _Validator, can_write: bool = ...) -> None: ...
     def validate(self) -> None: ...
 
+
 ModelName = Literal["local_app", "remote_app", "local_unit", "remote_unit"]
 
 class Relation(Generic[_A, _B, _C, _D]):
@@ -93,7 +99,7 @@ class Relation(Generic[_A, _B, _C, _D]):
     _remote_units: Tuple[Unit]
     _remote_app: Application
     _relation_model: Optional[RelationModel]
-    _validator: Optional[Type[_ValidatorType]]
+    _validator: Optional[_Validator]
     _is_leader: bool
     _local_app: Application
     _local_unit: Unit
@@ -136,11 +142,11 @@ class _EndpointWrapper(Generic[_A, _B, _C, _D]):
     local_app: Application
     local_unit: Unit
 
-    def __init__(self, charm: CharmBase, relation_name: str, template: Template = ..., role: Role = ..., validator: Type['_Validator'] = ..., **kwargs) -> None: ...
+    def __init__(self, charm: CharmBase, relation_name: str, template: _Template = ..., role: Role = ..., validator: Type['_Validator'] = ..., **kwargs) -> None: ...
     def publish_defaults(self, event) -> None: ...
-    def wrap(self, relation: OpsRelation) -> Relation: ...
+    def wrap(self, relation: OpsRelation) -> Relation[_A,_B,_C,_D]: ...
     @property
-    def relations(self) -> Tuple[Relation, ...]: ...
+    def relations(self) -> Tuple[Relation[_A,_B,_C,_D], ...]: ...
     @property
     def remote_units_valid(self): ...
     @property
@@ -164,14 +170,12 @@ class _EndpointWrapper(Generic[_A, _B, _C, _D]):
     @property
     def remote_units_data(self) -> Dict[Unit, DataWrapper[_D]]: ...
 
-
-
 # template and requirer role
 @overload
 def EndpointWrapper(
     charm: CharmBase,
     relation_name: str,
-    template: Template[DataBagModel[_A, _B], DataBagModel[_C, _D]],
+    template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]],
     role: Literal["requirer"] = None,  # todo check this works
     validator: Optional[Type[_Validator]] = None,
     on_joined: Optional[Callable] = None,
@@ -185,7 +189,7 @@ def EndpointWrapper(
 def EndpointWrapper(
     charm: CharmBase,
     relation_name: str,
-    template: Template[DataBagModel[_A, _B], DataBagModel[_C, _D]],
+    template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]],
     role: Literal["provider"] = None,  # todo check this works
     validator: Optional[Type[_Validator]] = None,
     on_joined: Optional[Callable] = None,
@@ -199,8 +203,8 @@ def EndpointWrapper(
 def EndpointWrapper(
     charm: CharmBase,
     relation_name: str,
-    template: Template = None,
-    role: Role = None,
+    template: None = None,
+    role: None = None,
     validator: Optional[Type[_Validator]] = None,
     on_joined: Optional[Callable] = None,
     on_changed: Optional[Callable] = None,
@@ -209,26 +213,21 @@ def EndpointWrapper(
     on_created: Optional[Callable] = None
 ) -> _EndpointWrapper: ...
 
-def make_template(
-    requirer: Optional[DataBagModel[_A, _B]] = None,
-    provider: Optional[DataBagModel[_C, _D]] = None,
-) -> Template[DataBagModel[_A, _B], DataBagModel[_C, _D]]: ...
 @overload
-def make_template(
-    requirer_unit_model: Optional[_A] = None,
-    requirer_app_model: Optional[_B] = None,
-    provider_unit_model: Optional[_C] = None,
-    provider_app_model: Optional[_D] = None,
-) -> Template[DataBagModel[_A, _B], DataBagModel[_C, _D]]: ...
+def Template(
+    provider: _DMProv,
+    requirer: _DMReq,
+) -> _Template[_DMProv, _DMReq]: ...
 @overload
-def make_template(
-    requirer: Optional[DataBagModel[_A, _B]] = None,
-    provider_unit_model: Optional[_C] = None,
-    provider_app_model: Optional[_D] = None,
-) -> Template[DataBagModel[_A, _B], DataBagModel[_C, _D]]: ...
+def Template(
+    provider: _DMProv,
+) -> _Template[_DMProv, _DataBagModel[None, None]]: ...
 @overload
-def make_template(
-    requirer_unit_model: Optional[_A] = None,
-    requirer_app_model: Optional[_B] = None,
-    provider: Optional[DataBagModel[_C, _D]] = None,
-) -> Template[DataBagModel[_A, _B], DataBagModel[_C, _D]]: ...
+def Template(
+    requirer: _DMReq,
+) -> _Template[_DataBagModel[None, None], _DMReq]: ...
+@overload
+def Template() -> _Template[_DataBagModel[None, None], _DataBagModel[None, None]]: ...
+
+def _get_dataclass_defaults(model:Any) -> Dict[str, Any]: ...
+def _get_pydantic_defaults(model:Any) -> Dict[str, Any]: ...

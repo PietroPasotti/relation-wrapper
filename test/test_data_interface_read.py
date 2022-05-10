@@ -14,7 +14,7 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import Relations
+from endpoint_wrapper import EndpointWrapper, _EndpointWrapper
 
 RELATION_NAME = "foo"
 LOCAL_APP = "local"
@@ -30,7 +30,7 @@ class RequirerCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = Relations(
+        self.foo = EndpointWrapper(
             self,
             "foo",
             bar_template,
@@ -39,8 +39,6 @@ class RequirerCharm(CharmBase):
             on_departed=self._handle,
             on_changed=self._handle,
         )
-
-        self.foo.relations[0].local_app_data
 
     def _handle(self, event):
         pass
@@ -79,7 +77,7 @@ def charm(harness, setup_relation) -> RequirerCharm:
 
 
 @pytest.fixture
-def relations(charm) -> Relations:
+def relations(charm) -> _EndpointWrapper:
     return charm.foo
 
 
