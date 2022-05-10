@@ -14,14 +14,14 @@ _B = TypeVar("_B")
 _C = TypeVar("_C")
 _D = TypeVar("_D")
 
-_DMReq = TypeVar("_DMReq", bound=_DataBagModel)
-_DMProv = TypeVar("_DMProv", bound=_DataBagModel)
-
 class _DataBagModel(Generic[_A, _B]):
     app: Optional[_A]
     unit: Optional[_B]
     def to_dict(self) -> dict: ...
     def __init__(self, app, unit) -> None: ...
+
+_DMReq = TypeVar("_DMReq", bound=_DataBagModel)
+_DMProv = TypeVar("_DMProv", bound=_DataBagModel)
 
 @overload
 def DataBagModel(app: _A, unit: _B) -> _DataBagModel[_A, _B]: ...
@@ -29,6 +29,24 @@ def DataBagModel(app: _A, unit: _B) -> _DataBagModel[_A, _B]: ...
 def DataBagModel(app: _A) -> _DataBagModel[_A, None]: ...
 @overload
 def DataBagModel(unit: _B) -> _DataBagModel[None, _B]: ...
+
+class RelationModel(Generic[_A, _B, _C, _D]):
+    local_app_data_model: _A
+    remote_app_data_model: _B
+    local_unit_data_model: _C
+    remote_unit_data_model: _D
+    @staticmethod
+    def from_charm(
+        charm: CharmBase, relation_name: str, template: '_Template' = ...
+    ) -> 'RelationModel': ...
+    def get(self, name): ...
+    def __init__(
+        self,
+        local_app_data_model,
+        remote_app_data_model,
+        local_unit_data_model,
+        remote_unit_data_model,
+    ) -> None: ...
 
 class _Template(Generic[_DMProv, _DMReq]):
     provider: Optional[_DMProv]
@@ -41,24 +59,6 @@ class _Template(Generic[_DMProv, _DMReq]):
     ) -> RelationModel: ...  # unimportant to define _A, _B, _C, _D here...
     def to_dict(self) -> dict: ...
     def __init__(self, requirer, provider) -> None: ...
-
-class RelationModel(Generic[_A, _B, _C, _D]):
-    local_app_data_model: _A
-    remote_app_data_model: _B
-    local_unit_data_model: _C
-    remote_unit_data_model: _D
-    @staticmethod
-    def from_charm(
-        charm: CharmBase, relation_name: str, template: _Template = ...
-    ) -> RelationModel: ...
-    def get(self, name): ...
-    def __init__(
-        self,
-        local_app_data_model,
-        remote_app_data_model,
-        local_unit_data_model,
-        remote_unit_data_model,
-    ) -> None: ...
 
 _RelationModel = TypeVar("_RelationModel", bound=RelationModel)
 

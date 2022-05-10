@@ -149,3 +149,7 @@ class MyCharm(CharmBase):
         foo.local_app_data.rambo = Rambo(film=2)
         assert foo.remote_app_data['arnold']['terminator']
 ```
+
+TODO:
+- inline-lib command to turn .py and .pyi into a single .py file ready to be distributed as charm lib
+- pub-lib command to take current version and publish charm lib under that version/revision
