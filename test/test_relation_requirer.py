@@ -11,7 +11,7 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from relation import Relations
+from endpoint_wrapper import Relations
 
 RELATION_NAME = "foo"
 

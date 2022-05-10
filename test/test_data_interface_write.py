@@ -6,7 +6,7 @@ from conftest import RequirerAppModel, bar_template, mock_relation_data, reinit_
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from relation import (
+from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
     InvalidFieldNameError,

@@ -1,6 +1,6 @@
 from ops.testing import Harness
 
-from relation import DataBagModel, Template
+from endpoint_wrapper import DataBagModel, Template
 
 try:
     from pydantic import BaseModel
@@ -39,8 +39,12 @@ except ModuleNotFoundError:
 
 
 bar_template = Template(
-    requirer=DataBagModel(app=RequirerAppModel, unit=RequirerUnitModel),
-    provider=DataBagModel(app=ProviderAppModel, unit=ProviderUnitModel),
+    requirer=DataBagModel(
+        app=RequirerAppModel,
+        unit=RequirerUnitModel),
+    provider=DataBagModel(
+        app=ProviderAppModel,
+        unit=ProviderUnitModel),
 )
 
 

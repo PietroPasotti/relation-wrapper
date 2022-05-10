@@ -15,7 +15,7 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from relation import (
+from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
     InvalidFieldNameError,

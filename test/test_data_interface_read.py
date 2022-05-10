@@ -14,7 +14,7 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from relation import Relations
+from endpoint_wrapper import Relations
 
 RELATION_NAME = "foo"
 LOCAL_APP = "local"
@@ -39,6 +39,8 @@ class RequirerCharm(CharmBase):
             on_departed=self._handle,
             on_changed=self._handle,
         )
+
+        self.foo.relations[0].local_app_data
 
     def _handle(self, event):
         pass
