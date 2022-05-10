@@ -101,8 +101,8 @@ def test_data_write_valid_data(harness, relation_id, relations):
     relations.relations[0].local_app_data["foo"] = 41
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == "41"
     assert relations.relations[0].local_app_data["foo"] == 41
-    assert relations.local_app_valid
-    assert relations.remote_units_valid is None
+    assert relations.local_app_data_valid
+    assert relations.remote_units_data_valid is None
     assert relations.valid is None
 
     # can't write remote data via relations
@@ -203,7 +203,7 @@ def test_bad_data_overwrite_good_data(harness, relation_id, relations):
 @pytest.mark.parametrize("leader", ((True, False)))
 def test_local_app_data_write_permissions(harness, relations, leader):
     harness.set_leader(leader)
-    assert relations.relations[0].local_app_data.can_write == leader
+    assert relations.relations[0].local_app_data._can_write == leader
     # can write local app only if leader
     if leader:
         relations.relations[0].local_app_data["foo"] = 41
@@ -216,7 +216,7 @@ def test_local_app_data_write_permissions(harness, relations, leader):
 def test_local_unit_data_write_permissions(harness, relations, leader):
     # can always write local unit
     harness.set_leader(leader)
-    assert relations.relations[0].local_unit_data.can_write is True
+    assert relations.relations[0].local_unit_data._can_write is True
     with pytest.raises(InvalidFieldNameError):
         relations.relations[0].local_unit_data["foo"] = "41"
 
@@ -228,6 +228,6 @@ def test_remote_entities_data_write_permissions(harness, relations, leader):
     for rem_data in chain(
         relations.remote_units_data.values(), relations.remote_units_data.values()
     ):
-        assert rem_data.can_write is False
+        assert rem_data._can_write is False
         with pytest.raises(CannotWriteError):
             rem_data["foo"] = "41"

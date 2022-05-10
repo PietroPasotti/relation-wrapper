@@ -127,9 +127,9 @@ def test_defaulted_data_written_automatically(charm, defaulting):
     # relation not initialized yet: there should be no data at all
     relations = harness.charm.foo
     with pytest.raises(KeyError):
-        assert not relations.local_unit_data["bar"]
+        assert not relations.local_units_data[relations.local_unit]["bar"]
     with pytest.raises(KeyError):
-        assert not relations.local_app_data["foo"]
+        assert not relations.local_apps_data[relations.local_app]["foo"]
 
     relation_id = harness.add_relation(RELATION_NAME, REMOTE_APP)
 

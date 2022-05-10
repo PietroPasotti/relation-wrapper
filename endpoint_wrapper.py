@@ -431,11 +431,21 @@ class _RelationBase:
 def _needs_write_permission(method):
     @wraps(method)
     def wrapper(self: "DataWrapper", *args, **kwargs):
-        if not self.can_write:
+        if not self._can_write:
             raise CannotWriteError(self._relation, self._entity)
         return method(self, *args, **kwargs)
 
     return wrapper
+
+@dataclass
+class DataWrapperParams:
+    relation: OpsRelation
+    data: Any
+    validator: _Validator
+    validator: '_Validator'
+    entity: 'UnitOrApplication'
+    model: 'Model'
+    can_write: bool
 
 
 class DataWrapper(Generic[M], collections.abc.MutableMapping):
@@ -449,32 +459,34 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
         validator: '_Validator',
         can_write: bool = False,
     ):
-        self._relation = relation
-        self._data = relation.data[entity]
 
-        self._validator = validator
+        # fixme: dedup issue here?
         validator.model = model
-
-        self._entity = entity
-        self._model = model
-        self.can_write = can_write
+        # keep the namespace clean: everything we put here is a name the user can't use
+        self.__datawrapper_params__ = DataWrapperParams(
+            relation=relation,
+            data=relation.data[entity],
+            validator=validator,
+            entity=entity,
+            model=model,
+            can_write=can_write)
 
     def __iter__(self):
-        return iter(self._data)
+        return iter(self.__datawrapper_params__.data)
 
     def __len__(self):
-        return len(self._data)
+        return len(self.__datawrapper_params__.data)
 
     def __getitem__(self, item):
-        self._validator.check_field(item)
-        value = self._data[item]
+        self.__datawrapper_params__.validator.check_field(item)
+        value = self.__datawrapper_params__.data[item]
         # coerce value to the type specified by the field
-        obj = self._validator.deserialize(item, value)
+        obj = self.__datawrapper_params__.validator.deserialize(item, value)
         return obj
 
     @_needs_write_permission
     def __setitem__(self, key, value):
-        self._validator.check_field(key)
+        self.__datawrapper_params__.validator.check_field(key)
 
         # we can only do validation if all mandatory fields have been set already,
         # and the user might be doing something like
@@ -482,28 +494,29 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
         # --> required 'keyB' is not set yet! cannot validate yet
         # relation_data['keyB'] = 'valueB'
         # --> now we can validate; only now we can find out whether 'key' is valid.
-        value = self._validator.serialize(key, value)
-        self._data[key] = value
+        value = self.__datawrapper_params__.validator.serialize(key, value)
+        self.__datawrapper_params__.data[key] = value
 
     @_needs_write_permission
     def __delitem__(self, key):
-        self._validator.check_field(key)
-        self._data[key] = ""
+        self.__datawrapper_params__.validator.check_field(key)
+        self.__datawrapper_params__.data[key] = ""
 
     def __eq__(self, other):
-        return self._data == other
+        return self.__datawrapper_params__.data == other
 
     def __bool__(self):
-        return bool(self._data)
+        return bool(self.__datawrapper_params__.data)
 
+    # fixme consider hiding valid and validate; keep namespace cleaner
     @property
     def valid(self) -> Optional[bool]:
         """Whether this databag as a whole is valid."""
-        return self._validator.validate(self._data)
+        return self.__datawrapper_params__.validator.validate(self.__datawrapper_params__.data)
 
     def validate(self):
         """Validate the databag and raise if not valid."""
-        self._validator.validate(self._data, _raise=True)
+        self.__datawrapper_params__.validator.validate(self.__datawrapper_params__.data, _raise=True)
 
     def __repr__(self):
         validity = self.valid
@@ -511,8 +524,8 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
             "valid" if validity else ("invalid" if validity is False else "unfilled")
         )
         return (
-            f"<{self._relation.name}[{type(self._entity).__name__}:: "
-            f"{self._entity.name}] {repr(self._data)} "
+            f"<{self.__datawrapper_params__.relation.name}[{type(self.__datawrapper_params__.entity).__name__}:: "
+            f"{self.__datawrapper_params__.entity.name}] {repr(self.__datawrapper_params__.data)} "
             f"({valid_str})>"
         )
 
@@ -526,7 +539,7 @@ class Relation(_RelationBase):
     >>>         relation = EndpointWrapper(self, "relation").wrap(event.relation)
     >>>         foo = relation.remote_app_data['foo']
     >>>         relation.local_app_data['bar'] = foo + 1
-    >>>         assert relation.local_app_valid
+    >>>         assert relation.local_app_data_valid
     """
 
     def __init__(
@@ -562,36 +575,36 @@ class Relation(_RelationBase):
         return self._remote_app
 
     @property
-    def remote_units_valid(self) -> Optional[bool]:
+    def remote_units_data_valid(self) -> Optional[bool]:
         """Whether the `remote_units` side of this relation is valid."""
         return get_worst_case(
             (ru_data.valid for ru_data in self.remote_units_data.values())
         )
 
     @property
-    def remote_app_valid(self) -> Optional[bool]:
+    def remote_app_data_valid(self) -> Optional[bool]:
         """Whether the `remote_app` side of this relation is valid."""
         return self.remote_app_data.valid
 
     @property
-    def local_unit_valid(self) -> Optional[bool]:
+    def local_unit_data_valid(self) -> Optional[bool]:
         """Whether the `local_unit` side of this relation is valid."""
         return self.local_unit_data.valid
 
     @property
-    def local_app_valid(self) -> Optional[bool]:
+    def local_app_data_valid(self) -> Optional[bool]:
         """Whether the `local_app` side of this relation is valid."""
         return self.local_app_data.valid
 
     @property
     def local_valid(self) -> Optional[bool]:
         """Whether the `local` side of this relation is valid."""
-        return get_worst_case((self.local_app_valid, self.local_unit_valid))
+        return get_worst_case((self.local_app_data_valid, self.local_unit_data_valid))
 
     @property
     def remote_valid(self) -> Optional[bool]:
         """Whether the `remote` side of this relation is valid."""
-        return get_worst_case((self.remote_app_valid, self.remote_units_valid))
+        return get_worst_case((self.remote_app_data_valid, self.remote_units_data_valid))
 
     @property
     def valid(self) -> Optional[bool]:
@@ -741,28 +754,28 @@ class _EndpointWrapper(_RelationBase, Object):
         )
 
     @property
-    def remote_units_valid(self):
+    def remote_units_data_valid(self):
         """Whether the `remote_units` side of this relation is valid."""
-        return get_worst_case(r.remote_units_valid for r in self.relations)
+        return get_worst_case(r.remote_units_data_valid for r in self.relations)
 
     @property
-    def remote_apps_valid(self):
+    def remote_apps_data_valid(self):
         """Whether the `remote_apps` side of this relation is valid."""
-        return get_worst_case(r.remote_app_valid for r in self.relations)
+        return get_worst_case(r.remote_app_data_valid for r in self.relations)
 
     @property
-    def local_unit_valid(self):
+    def local_unit_data_valid(self):
         """Whether the `local_unit` side of this relation is valid."""
         if not self.relations:
             return True
-        return get_worst_case(map(lambda r: r.local_unit_valid, self.relations))
+        return get_worst_case(map(lambda r: r.local_unit_data_valid, self.relations))
 
     @property
-    def local_app_valid(self):
+    def local_app_data_valid(self):
         """Whether the `local_app` side of this relation is valid."""
         if not self.relations:
             return True
-        return get_worst_case(map(lambda r: r.local_app_valid, self.relations))
+        return get_worst_case(map(lambda r: r.local_app_data_valid, self.relations))
 
     @property
     def remote_valid(self):
@@ -780,7 +793,7 @@ class _EndpointWrapper(_RelationBase, Object):
         return get_worst_case(map(lambda r: r.valid, self.relations))
 
     @property
-    def local_app_data(self) -> Dict[Application, DataWrapper[Any]]:
+    def local_apps_data(self) -> Dict[Application, DataWrapper[Any]]:
         """Map remote apps to the `local_app` side of the relation."""
         if not self.relations:
             return {}
@@ -792,11 +805,11 @@ class _EndpointWrapper(_RelationBase, Object):
         return {r.remote_app: r.remote_app_data for r in self.relations}
 
     @property
-    def local_unit_data(self) -> Dict[Application, DataWrapper[Any]]:
+    def local_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
         """Map remote apps to the `local_unit` side of the relation."""
         if not self.relations:
             return {}
-        return {r.remote_app: r.local_unit_data for r in self.relations}
+        return {r.local_unit: r.local_unit_data for r in self.relations}
 
     @property
     def remote_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
@@ -812,7 +825,7 @@ class _EndpointWrapper(_RelationBase, Object):
         if isinstance(data, dict):
             return
 
-        assert data.can_write
+        assert data._can_write
         if model := data._model:
             defaults = get_defaults(model)
             for key, value in defaults.items():
