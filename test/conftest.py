@@ -39,12 +39,8 @@ except ModuleNotFoundError:
 
 
 bar_template = Template(
-    requirer=DataBagModel(
-        app=RequirerAppModel,
-        unit=RequirerUnitModel),
-    provider=DataBagModel(
-        app=ProviderAppModel,
-        unit=ProviderUnitModel),
+    requirer=DataBagModel(app=RequirerAppModel, unit=RequirerUnitModel),
+    provider=DataBagModel(app=ProviderAppModel, unit=ProviderUnitModel),
 )
 
 

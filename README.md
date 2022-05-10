@@ -48,7 +48,7 @@ Now we can use the template in combination with the EndpointWrapper:
 
 ```python
 from ops import CharmBase
-from endpoint_wrapper import EndpointWrapper
+from endpoint_wrapper import EndpointWrapper, ValidationError
 
 class MyCharm(CharmBase):
     META = {'requires': {'foo': {'interface': 'bar'}}}

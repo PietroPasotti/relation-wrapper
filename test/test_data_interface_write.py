@@ -2,17 +2,14 @@ from itertools import chain
 
 import pytest
 import yaml
-from conftest import RequirerAppModel, bar_template, mock_relation_data, reinit_charm
+from conftest import (RequirerAppModel, bar_template, mock_relation_data,
+                      reinit_charm)
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import (
-    CannotWriteError,
-    CoercionError,
-    InvalidFieldNameError,
-    EndpointWrapper,
-    ValidationError, _EndpointWrapper,
-)
+from endpoint_wrapper import (CannotWriteError, CoercionError, EndpointWrapper,
+                              InvalidFieldNameError, ValidationError,
+                              _EndpointWrapper)
 
 RELATION_NAME = "foo"
 LOCAL_APP = "local"

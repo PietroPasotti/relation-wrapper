@@ -7,19 +7,8 @@ import logging
 import typing
 from dataclasses import MISSING, Field, dataclass, is_dataclass
 from functools import wraps
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    Iterable,
-    Mapping,
-    Optional,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import (Any, Callable, Dict, Generic, Iterable, Mapping, Optional,
+                    Tuple, Type, TypeVar, Union)
 
 from ops.charm import CharmBase
 from ops.framework import Object
@@ -36,7 +25,6 @@ if typing.TYPE_CHECKING:
     ModelName = Literal["local_app", "remote_app", "local_unit", "remote_unit"]
     Models = Mapping[ModelName, Optional[Model]]
     UnitOrApplication = Union[Unit, Application]
-
 
     class _Validator(Protocol):
         model: Model
@@ -59,12 +47,13 @@ logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
 M = TypeVar("M")
 
+
 @dataclass
 class DataBagModel:
     """Databag model."""
 
-    app: Optional[Type['Model']] = None
-    unit: Optional[Type['Model']] = None
+    app: Optional[Type["Model"]] = None
+    unit: Optional[Type["Model"]] = None
 
     def to_dict(self) -> dict:
         """Convert to dict."""
@@ -92,8 +81,7 @@ class DataBagModel:
 
             raise TypeError(f"Cannot serialize {cls}")
 
-        return {"app": _to_dict(self.app),
-                "unit": _to_dict(self.unit)}
+        return {"app": _to_dict(self.app), "unit": _to_dict(self.unit)}
 
 
 @dataclass
@@ -133,10 +121,10 @@ class _Template:
 class RelationModel:
     """Model of a relation as seen from either side of it."""
 
-    local_app_data_model: Optional[Type['Model']] = None
-    remote_app_data_model: Optional[Type['Model']] = None
-    local_unit_data_model: Optional[Type['Model']] = None
-    remote_unit_data_model: Optional[Type['Model']] = None
+    local_app_data_model: Optional[Type["Model"]] = None
+    remote_app_data_model: Optional[Type["Model"]] = None
+    local_unit_data_model: Optional[Type["Model"]] = None
+    remote_unit_data_model: Optional[Type["Model"]] = None
 
     @staticmethod
     def from_charm(
@@ -315,7 +303,8 @@ class PydanticValidator:
 
     def _load(self):
         try:
-            from pydantic import BaseModel, ValidationError, parse_obj_as, parse_raw_as
+            from pydantic import (BaseModel, ValidationError, parse_obj_as,
+                                  parse_raw_as)
         except ModuleNotFoundError:
             raise RuntimeError("this validator requires `pydantic`")
 
@@ -437,14 +426,15 @@ def _needs_write_permission(method):
 
     return wrapper
 
+
 @dataclass
 class DataWrapperParams:
     relation: OpsRelation
     data: Any
     validator: _Validator
-    validator: '_Validator'
-    entity: 'UnitOrApplication'
-    model: 'Model'
+    validator: "_Validator"
+    entity: "UnitOrApplication"
+    model: "Model"
     can_write: bool
 
 
@@ -454,9 +444,9 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
     def __init__(
         self,
         relation: OpsRelation,
-        entity: 'UnitOrApplication',
-        model: 'Model',
-        validator: '_Validator',
+        entity: "UnitOrApplication",
+        model: "Model",
+        validator: "_Validator",
         can_write: bool = False,
     ):
 
@@ -469,7 +459,8 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
             validator=validator,
             entity=entity,
             model=model,
-            can_write=can_write)
+            can_write=can_write,
+        )
 
     def __iter__(self):
         return iter(self.__datawrapper_params__.data)
@@ -512,11 +503,15 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
     @property
     def valid(self) -> Optional[bool]:
         """Whether this databag as a whole is valid."""
-        return self.__datawrapper_params__.validator.validate(self.__datawrapper_params__.data)
+        return self.__datawrapper_params__.validator.validate(
+            self.__datawrapper_params__.data
+        )
 
     def validate(self):
         """Validate the databag and raise if not valid."""
-        self.__datawrapper_params__.validator.validate(self.__datawrapper_params__.data, _raise=True)
+        self.__datawrapper_params__.validator.validate(
+            self.__datawrapper_params__.data, _raise=True
+        )
 
     def __repr__(self):
         validity = self.valid
@@ -547,7 +542,7 @@ class Relation(_RelationBase):
         charm: CharmBase,
         relation: OpsRelation,
         model: RelationModel,
-        validator: Type['_Validator'] = DEFAULT_VALIDATOR,
+        validator: Type["_Validator"] = DEFAULT_VALIDATOR,
     ):
         super().__init__(charm=charm, relation_name=relation.name, model=model)
         self._validator = validator()
@@ -604,7 +599,9 @@ class Relation(_RelationBase):
     @property
     def remote_valid(self) -> Optional[bool]:
         """Whether the `remote` side of this relation is valid."""
-        return get_worst_case((self.remote_app_data_valid, self.remote_units_data_valid))
+        return get_worst_case(
+            (self.remote_app_data_valid, self.remote_units_data_valid)
+        )
 
     @property
     def valid(self) -> Optional[bool]:
@@ -612,7 +609,7 @@ class Relation(_RelationBase):
         return get_worst_case((self.local_valid, self.remote_valid))
 
     def _wrap_data(
-        self, entity: 'UnitOrApplication', model_name: 'ModelName', can_write=False
+        self, entity: "UnitOrApplication", model_name: "ModelName", can_write=False
     ) -> DataWrapper[Any]:
         return DataWrapper(
             relation=self._relation,
@@ -688,14 +685,15 @@ class _EndpointWrapper(_RelationBase, Object):
         charm: CharmBase,
         relation_name: str,
         template: _Template = None,
-        role: 'Role' = None,
-        validator: Type['_Validator'] = DEFAULT_VALIDATOR,
-        **kwargs
+        role: "Role" = None,
+        validator: Type["_Validator"] = DEFAULT_VALIDATOR,
+        **kwargs,
     ):
         """Initialize."""
         if template and not role:
-            logger.warning("provide a `role` for mypy to be able to type "
-                           "the databag models.")
+            logger.warning(
+                "provide a `role` for mypy to be able to type " "the databag models."
+            )
 
         model = RelationModel.from_charm(charm, relation_name, template)
         _RelationBase.__init__(self, charm, relation_name, model=model)
@@ -867,7 +865,7 @@ def Template(
     # provider_unit_model=None,
     # provider_app_model=None,
     requirer: DataBagModel = None,
-    provider: DataBagModel = None
+    provider: DataBagModel = None,
 ):
     # def _coalesce(main, app, unit):
     #     if main:

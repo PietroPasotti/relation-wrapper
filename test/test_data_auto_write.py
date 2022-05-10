@@ -6,17 +6,10 @@ from conftest import RequirerAppModel, mock_relation_data, reinit_charm
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import (
-    CannotWriteError,
-    CoercionError,
-    DataBagModel,
-    InvalidFieldNameError,
-    EndpointWrapper,
-    Template,
-    ValidationError,
-    _get_dataclass_defaults,
-    _get_pydantic_defaults,
-)
+from endpoint_wrapper import (CannotWriteError, CoercionError, DataBagModel,
+                              EndpointWrapper, InvalidFieldNameError, Template,
+                              ValidationError, _get_dataclass_defaults,
+                              _get_pydantic_defaults)
 
 try:
     from pydantic import BaseModel
