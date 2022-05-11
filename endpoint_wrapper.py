@@ -4,11 +4,11 @@ import collections
 import dataclasses
 import json
 import logging
+import typing
 from dataclasses import MISSING, Field, dataclass, is_dataclass
 from functools import wraps
 from typing import (
     Any,
-    Callable,
     Dict,
     Generic,
     Iterable,
@@ -26,30 +26,51 @@ from ops.model import Application
 from ops.model import Model as OpsModel
 from ops.model import Relation as OpsRelation
 from ops.model import Unit
-from typing_extensions import Literal, Protocol
+
+if typing.TYPE_CHECKING:
+    from typing import Literal, Protocol
+
+    Role = Literal["requirer", "provider"]
+    Model = Any  # dataclass or pydantic model
+    ModelName = Literal["local_app", "remote_app", "local_unit", "remote_unit"]
+    Models = Mapping[ModelName, Optional[Model]]
+    UnitOrApplication = Union[Unit, Application]
+
+    class _Validator(Protocol):
+        model: Model
+
+        def validate(self, data: dict, _raise: bool = False) -> bool:  # type: ignore
+            pass
+
+        def check_field(self, key) -> Any:  # type: ignore
+            pass
+
+        def deserialize(self, key, value) -> Any:  # type: ignore
+            pass
+
+        def serialize(self, key, value) -> str:  # type: ignore
+            pass
+
 
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 M = TypeVar("M")
 
-Model = Any  # dataclass or pydantic model
-ModelName = Literal["local_app", "remote_app", "local_unit", "remote_unit"]
-Models = Mapping[ModelName, Optional[Any]]
-UnitOrApplication = Union[Unit, Application]
-
 
 @dataclass
 class DataBagModel:
     """Databag model."""
 
-    app: Type[Model] = None
-    unit: Type[Model] = None
+    app: Optional[Type["Model"]] = None
+    unit: Optional[Type["Model"]] = None
 
     def to_dict(self) -> dict:
         """Convert to dict."""
 
-        def _to_dict(cls: Type):
+        def _to_dict(cls: Optional[Type]):
+            if cls is None:
+                return None
             try:
                 import pydantic
 
@@ -70,15 +91,15 @@ class DataBagModel:
 
             raise TypeError(f"Cannot serialize {cls}")
 
-        return {"app": self.app.to_dict(), "unit": self.app.to_dict()}
+        return {"app": _to_dict(self.app), "unit": _to_dict(self.unit)}
 
 
 @dataclass
-class Template:
+class _Template:
     """Data template for requirer and provider sides of an integration."""
 
-    requirer: DataBagModel = None
-    provider: DataBagModel = None
+    requirer: Optional[DataBagModel] = None
+    provider: Optional[DataBagModel] = None
 
     def as_requirer_model(self) -> "RelationModel":
         """Get the template as seen from the requirer side."""
@@ -101,8 +122,8 @@ class Template:
     def to_dict(self) -> dict:
         """Convert to dict."""
         return {
-            "requirer": self.requirer.to_dict(),
-            "provider": self.provider.to_dict(),
+            "requirer": self.requirer.to_dict() if self.requirer else None,
+            "provider": self.provider.to_dict() if self.provider else None,
         }
 
 
@@ -110,14 +131,14 @@ class Template:
 class RelationModel:
     """Model of a relation as seen from either side of it."""
 
-    local_app_data_model: Type[Model] = None
-    remote_app_data_model: Type[Model] = None
-    local_unit_data_model: Type[Model] = None
-    remote_unit_data_model: Type[Model] = None
+    local_app_data_model: Optional[Type["Model"]] = None
+    remote_app_data_model: Optional[Type["Model"]] = None
+    local_unit_data_model: Optional[Type["Model"]] = None
+    remote_unit_data_model: Optional[Type["Model"]] = None
 
     @staticmethod
     def from_charm(
-        charm: CharmBase, relation_name: str, template: Template
+        charm: CharmBase, relation_name: str, template: Optional[_Template] = None
     ) -> "RelationModel":
         """Guess the model from a charm's meta and a template."""
         if not template:
@@ -146,22 +167,6 @@ class InvalidFieldNameError(ValidationError):
 
 class CannotWriteError(RuntimeError):
     """Insufficient permissions to write to the databag."""
-
-
-class _Validator(Protocol):
-    model: Model
-
-    def validate(self, data: dict, _raise: bool = False) -> bool:
-        pass
-
-    def check_field(self, key) -> Any:
-        pass
-
-    def deserialize(self, key, value) -> Any:
-        pass
-
-    def serialize(self, key, value) -> str:
-        pass
 
 
 def _loads(method):
@@ -206,7 +211,7 @@ class DataclassValidator:
 
         for key, value in data.items():
             try:
-                field: Field = self.check_field(key)
+                field: Optional[Field] = self.check_field(key)
             except InvalidFieldNameError as e:
                 logger.error(
                     f"{key} is an invalid field name; value={value}; error={e}"
@@ -217,7 +222,7 @@ class DataclassValidator:
                 self.deserialize(key, value)
             except CoercionError as e:
                 logger.error(
-                    f"{key} can't be cast to the expected type {field.type}; "
+                    f"{key} can't be cast to the expected field {field}; "
                     f"value={value}; error={e}; this could be a spurious "
                     f"error if you are trying to use complex datatypes."
                 )
@@ -225,7 +230,7 @@ class DataclassValidator:
 
         missing_data = False
         for name, field in model.__dataclass_fields__.items():
-            if name not in data and field.default is MISSING:
+            if name not in data and field.default is MISSING:  # type: ignore
                 missing_data = True
 
         if missing_data:
@@ -256,7 +261,7 @@ class DataclassValidator:
             return json.dumps(value)
 
         # check that the key is a valid field
-        field = self.check_field(key)
+        field: Any = self.check_field(key)
         # check that the field type matches the type of the object we're dumping;
         # otherwise we won't be able to deserialize it later.
         if not isinstance(value, field.type):
@@ -269,7 +274,7 @@ class DataclassValidator:
         if is_dataclass(value):
             return json.dumps(asdict(value))
 
-        return json.dumps(value)
+        return str(value)
 
     def deserialize(self, key: str, value: str) -> Any:
         """Cast back databag content to its intended type."""
@@ -280,7 +285,7 @@ class DataclassValidator:
                 logger.error("unable to decode {}; returning it raw.".format(value))
                 return value
 
-        field = self.check_field(key)
+        field: Any = self.check_field(key)
         try:
             return self._parse_obj_as(value, field.type)
         except Exception as e:
@@ -294,13 +299,8 @@ class PydanticValidator:
     Requires pydantic to be installed.
     """
 
-    _BaseModel = None
-    _PydanticValidationError = None
-    _parse_obj_as = None
-    _parse_raw_as = None
-    _loaded = False
-
-    _model = None
+    _loaded: bool = False
+    _model: Any = None
 
     @property
     def model(self):
@@ -318,7 +318,7 @@ class PydanticValidator:
             raise RuntimeError("this validator requires `pydantic`")
 
         self._BaseModel = BaseModel
-        self._PydanticValidationError = ValidationError
+        self._PydanticValidationError: Type[BaseException] = ValidationError
         self._parse_obj_as = parse_obj_as
         self._parse_raw_as = parse_raw_as
         self._loaded = True
@@ -351,7 +351,7 @@ class PydanticValidator:
         if not self.model:
             return None
 
-        field = self.model.__fields__.get(name)
+        field: Any = self.model.__fields__.get(name)
         if not field:
             raise InvalidFieldNameError(name)
         return field
@@ -359,7 +359,7 @@ class PydanticValidator:
     @_loads
     def coerce(self, key, value):
         """Coerce obj to the given field."""
-        field = self.check_field(key)
+        field: Any = self.check_field(key)
         try:
             return self._parse_obj_as(field.type_, value)
         except self._PydanticValidationError as e:
@@ -391,7 +391,7 @@ class PydanticValidator:
                 logger.error("unable to decode {}; returning it raw.".format(value))
                 return value
 
-        field = self.check_field(obj)
+        field: Any = self.check_field(obj)
         return self._parse_raw_as(field.type_, value)
 
 
@@ -429,50 +429,64 @@ class _RelationBase:
 def _needs_write_permission(method):
     @wraps(method)
     def wrapper(self: "DataWrapper", *args, **kwargs):
-        if not self.can_write:
-            raise CannotWriteError(self._relation, self._entity)
+        params = self.__datawrapper_params__
+        if not params.can_write:
+            raise CannotWriteError(params.relation, params.entity)
         return method(self, *args, **kwargs)
 
     return wrapper
 
 
-class DataWrapper(Generic[M], collections.abc.MutableMapping):
+@dataclass
+class DataWrapperParams:  # noqa: D101
+    relation: OpsRelation
+    data: Any
+    validator: "_Validator"
+    entity: "UnitOrApplication"
+    model: "Model"
+    can_write: bool
+
+
+class DataWrapper(Generic[M], collections.abc.MutableMapping):  # type: ignore
     """Wrapper for the databag of a specific entity involved in a relation."""
 
     def __init__(
         self,
         relation: OpsRelation,
-        entity: UnitOrApplication,
-        model: Model,
-        validator: _Validator,
+        entity: "UnitOrApplication",
+        model: "Model",
+        validator: "_Validator",
         can_write: bool = False,
     ):
-        self._relation = relation
-        self._data = relation.data[entity]
 
-        self._validator = validator
+        # fixme: dedup issue here; externalize model in Validator.
         validator.model = model
-
-        self._entity = entity
-        self._model = model
-        self.can_write = can_write
+        # keep the namespace clean: everything we put here is a name the user can't use
+        self.__datawrapper_params__ = DataWrapperParams(
+            relation=relation,
+            data=relation.data[entity],
+            validator=validator,
+            entity=entity,
+            model=model,
+            can_write=can_write,
+        )
 
     def __iter__(self):
-        return iter(self._data)
+        return iter(self.__datawrapper_params__.data)
 
     def __len__(self):
-        return len(self._data)
+        return len(self.__datawrapper_params__.data)
 
     def __getitem__(self, item):
-        self._validator.check_field(item)
-        value = self._data[item]
+        self.__datawrapper_params__.validator.check_field(item)
+        value = self.__datawrapper_params__.data[item]
         # coerce value to the type specified by the field
-        obj = self._validator.deserialize(item, value)
+        obj = self.__datawrapper_params__.validator.deserialize(item, value)
         return obj
 
     @_needs_write_permission
     def __setitem__(self, key, value):
-        self._validator.check_field(key)
+        self.__datawrapper_params__.validator.check_field(key)
 
         # we can only do validation if all mandatory fields have been set already,
         # and the user might be doing something like
@@ -480,37 +494,43 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
         # --> required 'keyB' is not set yet! cannot validate yet
         # relation_data['keyB'] = 'valueB'
         # --> now we can validate; only now we can find out whether 'key' is valid.
-        value = self._validator.serialize(key, value)
-        self._data[key] = value
+        value = self.__datawrapper_params__.validator.serialize(key, value)
+        self.__datawrapper_params__.data[key] = value
 
     @_needs_write_permission
     def __delitem__(self, key):
-        self._validator.check_field(key)
-        self._data[key] = ""
+        self.__datawrapper_params__.validator.check_field(key)
+        self.__datawrapper_params__.data[key] = ""
 
     def __eq__(self, other):
-        return self._data == other
+        return self.__datawrapper_params__.data == other
 
     def __bool__(self):
-        return bool(self._data)
+        return bool(self.__datawrapper_params__.data)
 
+    # fixme consider hiding valid and validate; keep namespace cleaner
     @property
     def valid(self) -> Optional[bool]:
         """Whether this databag as a whole is valid."""
-        return self._validator.validate(self._data)
+        return self.__datawrapper_params__.validator.validate(
+            self.__datawrapper_params__.data
+        )
 
     def validate(self):
         """Validate the databag and raise if not valid."""
-        self._validator.validate(self._data, _raise=True)
+        self.__datawrapper_params__.validator.validate(
+            self.__datawrapper_params__.data, _raise=True
+        )
 
     def __repr__(self):
         validity = self.valid
         valid_str = (
             "valid" if validity else ("invalid" if validity is False else "unfilled")
         )
+        params = self.__datawrapper_params__
         return (
-            f"<{self._relation.name}[{type(self._entity).__name__}:: "
-            f"{self._entity.name}] {repr(self._data)} "
+            f"<{params.relation.name}[{type(params.entity).__name__}:: "
+            f"{params.entity.name}] {repr(params.data)} "
             f"({valid_str})>"
         )
 
@@ -519,11 +539,12 @@ class Relation(_RelationBase):
     """Encapsulates the relation between the local unit and a single remote unit.
 
     Usage:
-    >>> def on_event(self, _event):
-    >>>     relation = Relation(self, self._relation, self._model)
-    >>>     foo = relation.remote_app_data['foo']
-    >>>     relation.local_app_data['bar'] = foo + 1
-    >>>     assert relation.local_app_valid
+    >>> class MyCharm(CharmBase):
+    >>>     def on_event(self, event):
+    >>>         relation = EndpointWrapper(self, "relation").wrap(event.relation)
+    >>>         foo = relation.remote_app_data['foo']
+    >>>         relation.local_app_data['bar'] = foo + 1
+    >>>         assert relation.local_app_data_valid
     """
 
     def __init__(
@@ -531,15 +552,15 @@ class Relation(_RelationBase):
         charm: CharmBase,
         relation: OpsRelation,
         model: RelationModel,
-        validator: Type[_Validator] = DEFAULT_VALIDATOR,
+        validator: Type = DEFAULT_VALIDATOR,
     ):
         super().__init__(charm=charm, relation_name=relation.name, model=model)
         self._validator = validator()
         self._relation = relation
-        self._remote_units: Tuple[Unit] = tuple(relation.units)
-        self._remote_app: Application = relation.app
+        self._remote_units: Tuple[Unit] = tuple(relation.units)  # type: ignore
+        self._remote_app: Application = relation.app  # type: ignore
 
-    def wraps(self, relation: OpsRelation):
+    def wraps(self, relation: OpsRelation) -> bool:
         """Check if this Relation wraps the provided ops.Relation object."""
         return relation is self._relation
 
@@ -559,36 +580,38 @@ class Relation(_RelationBase):
         return self._remote_app
 
     @property
-    def remote_units_valid(self) -> Optional[bool]:
+    def remote_units_data_valid(self) -> Optional[bool]:
         """Whether the `remote_units` side of this relation is valid."""
         return get_worst_case(
             (ru_data.valid for ru_data in self.remote_units_data.values())
         )
 
     @property
-    def remote_app_valid(self) -> Optional[bool]:
+    def remote_app_data_valid(self) -> Optional[bool]:
         """Whether the `remote_app` side of this relation is valid."""
         return self.remote_app_data.valid
 
     @property
-    def local_unit_valid(self) -> Optional[bool]:
+    def local_unit_data_valid(self) -> Optional[bool]:
         """Whether the `local_unit` side of this relation is valid."""
         return self.local_unit_data.valid
 
     @property
-    def local_app_valid(self) -> Optional[bool]:
+    def local_app_data_valid(self) -> Optional[bool]:
         """Whether the `local_app` side of this relation is valid."""
         return self.local_app_data.valid
 
     @property
     def local_valid(self) -> Optional[bool]:
         """Whether the `local` side of this relation is valid."""
-        return get_worst_case((self.local_app_valid, self.local_unit_valid))
+        return get_worst_case((self.local_app_data_valid, self.local_unit_data_valid))
 
     @property
     def remote_valid(self) -> Optional[bool]:
         """Whether the `remote` side of this relation is valid."""
-        return get_worst_case((self.remote_app_valid, self.remote_units_valid))
+        return get_worst_case(
+            (self.remote_app_data_valid, self.remote_units_data_valid)
+        )
 
     @property
     def valid(self) -> Optional[bool]:
@@ -596,7 +619,7 @@ class Relation(_RelationBase):
         return get_worst_case((self.local_valid, self.remote_valid))
 
     def _wrap_data(
-        self, entity: UnitOrApplication, model_name: ModelName, can_write=False
+        self, entity: "UnitOrApplication", model_name: "ModelName", can_write=False
     ) -> DataWrapper[Any]:
         return DataWrapper(
             relation=self._relation,
@@ -632,7 +655,7 @@ class Relation(_RelationBase):
 
 def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
     """Get the worst of (from bad to worse): True, None, False."""
-    out = True
+    out: Optional[bool] = True
     for value in validity:
         if value is None and out is True:  # True --> None
             out = value
@@ -641,18 +664,19 @@ def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
     return out
 
 
-class Relations(_RelationBase, Object):
+class _EndpointWrapper(_RelationBase, Object):
     """Encapsulates the relation between the local application and a remote one.
     Usage:
 
-    >>> class MyDataModel(Model):
+    >>> # make a dataclass, or inherit from pydantic.BaseModel
+    >>> class MyDataModel:
     >>>     foo: int
     >>>     bar: str
     >>>     baz: SomeOtherModel  # noqa
     >>> class MyCharm(CharmBase):
     >>>     def __init__(self, *args):
     >>>         super().__init__(*args)
-    >>>         self._ingress_relations = ingress = Relations(
+    >>>         self._ingress_relations = EndpointWrapper(
     ...             self, 'ingress',
     ...             local_app_data_model=MyDataModel,
     ...             on_joined=self._on_ingress_joined,
@@ -670,15 +694,17 @@ class Relations(_RelationBase, Object):
         self,
         charm: CharmBase,
         relation_name: str,
-        template: Template = None,
-        validator: Type[_Validator] = DEFAULT_VALIDATOR,
-        on_joined: Callable = None,
-        on_changed: Callable = None,
-        on_broken: Callable = None,
-        on_departed: Callable = None,
-        on_created: Callable = None,
+        template: Optional[_Template] = None,
+        role: Optional["Role"] = None,
+        validator: Type = DEFAULT_VALIDATOR,
+        **kwargs,
     ):
         """Initialize."""
+        if template and not role:
+            logger.warning(
+                "provide a `role` for mypy to be able to type " "the databag models."
+            )
+
         model = RelationModel.from_charm(charm, relation_name, template)
         _RelationBase.__init__(self, charm, relation_name, model=model)
         Object.__init__(self, charm, relation_name + "_wrapper")
@@ -686,11 +712,11 @@ class Relations(_RelationBase, Object):
 
         # register all provided event handlers
         event_handlers = {
-            "relation_joined": on_joined,
-            "relation_changed": on_changed,
-            "relation_broken": on_broken,
-            "relation_departed": on_departed,
-            "relation_created": on_created,
+            "relation_joined": kwargs.get("on_joined"),
+            "relation_changed": kwargs.get("on_changed"),
+            "relation_broken": kwargs.get("on_broken"),
+            "relation_departed": kwargs.get("on_departed"),
+            "relation_created": kwargs.get("on_created"),
         }
 
         for name, handler in event_handlers.items():
@@ -715,7 +741,7 @@ class Relations(_RelationBase, Object):
 
     def wrap(self, relation: OpsRelation) -> Relation:
         """Get the Relation wrapper object from an ops Relation object."""
-        return next(filter(lambda R: R.wraps(relation), self.relations))
+        return next(filter(lambda r: r.wraps(relation), self.relations))
 
     @property
     def _relations(self) -> Tuple[OpsRelation, ...]:
@@ -723,7 +749,7 @@ class Relations(_RelationBase, Object):
         return tuple(relations) if relations else ()
 
     @property
-    def relations(self) -> Tuple[Relation]:
+    def relations(self) -> Tuple[Relation, ...]:
         """All relations currently alive on this charm."""
         return tuple(
             Relation(
@@ -736,28 +762,28 @@ class Relations(_RelationBase, Object):
         )
 
     @property
-    def remote_units_valid(self):
+    def remote_units_data_valid(self):
         """Whether the `remote_units` side of this relation is valid."""
-        return get_worst_case(r.remote_units_valid for r in self.relations)
+        return get_worst_case(r.remote_units_data_valid for r in self.relations)
 
     @property
-    def remote_apps_valid(self):
+    def remote_apps_data_valid(self):
         """Whether the `remote_apps` side of this relation is valid."""
-        return get_worst_case(r.remote_app_valid for r in self.relations)
+        return get_worst_case(r.remote_app_data_valid for r in self.relations)
 
     @property
-    def local_unit_valid(self):
+    def local_unit_data_valid(self):
         """Whether the `local_unit` side of this relation is valid."""
         if not self.relations:
             return True
-        return get_worst_case(map(lambda r: r.local_unit_valid, self.relations))
+        return get_worst_case(map(lambda r: r.local_unit_data_valid, self.relations))
 
     @property
-    def local_app_valid(self):
+    def local_app_data_valid(self):
         """Whether the `local_app` side of this relation is valid."""
         if not self.relations:
             return True
-        return get_worst_case(map(lambda r: r.local_app_valid, self.relations))
+        return get_worst_case(map(lambda r: r.local_app_data_valid, self.relations))
 
     @property
     def remote_valid(self):
@@ -775,7 +801,7 @@ class Relations(_RelationBase, Object):
         return get_worst_case(map(lambda r: r.valid, self.relations))
 
     @property
-    def local_app_data(self) -> Dict[Application, DataWrapper[Any]]:
+    def local_apps_data(self) -> Dict[Application, DataWrapper[Any]]:
         """Map remote apps to the `local_app` side of the relation."""
         if not self.relations:
             return {}
@@ -787,16 +813,16 @@ class Relations(_RelationBase, Object):
         return {r.remote_app: r.remote_app_data for r in self.relations}
 
     @property
-    def local_unit_data(self) -> Dict[Application, DataWrapper[Any]]:
+    def local_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
         """Map remote apps to the `local_unit` side of the relation."""
         if not self.relations:
             return {}
-        return {r.remote_app: r.local_unit_data for r in self.relations}
+        return {r.local_unit: r.local_unit_data for r in self.relations}
 
     @property
     def remote_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
         """Get the data from the `remote_units` side of the relation."""
-        data = {}
+        data: Dict[Unit, DataWrapper[Any]] = {}
         for r in self.relations:
             data.update(r.remote_units_data)
         return data
@@ -807,8 +833,8 @@ class Relations(_RelationBase, Object):
         if isinstance(data, dict):
             return
 
-        assert data.can_write
-        if model := data._model:
+        assert data.__datawrapper_params__.can_write
+        if model := data.__datawrapper_params__.model:
             defaults = get_defaults(model)
             for key, value in defaults.items():
                 data[key] = value
@@ -837,3 +863,14 @@ def _get_pydantic_defaults(model):
         for field in model.__fields__.values()
         if field.default
     }
+
+
+def EndpointWrapper(*args, **kwargs):  # noqa: D103 N802
+    return _EndpointWrapper(*args, **kwargs)
+
+
+def Template(  # noqa: D103 N802
+    requirer: Optional[DataBagModel] = None,
+    provider: Optional[DataBagModel] = None,
+):
+    return _Template(requirer=requirer, provider=provider)

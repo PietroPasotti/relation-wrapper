@@ -1,6 +1,6 @@
 from ops.testing import Harness
 
-from relation import DataBagModel, Template
+from endpoint_wrapper import DataBagModel, Template
 
 try:
     from pydantic import BaseModel
