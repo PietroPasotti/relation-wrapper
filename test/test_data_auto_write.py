@@ -6,12 +6,12 @@ from conftest import RequirerAppModel, mock_relation_data, reinit_charm
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from relation import (
+from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
     DataBagModel,
+    EndpointWrapper,
     InvalidFieldNameError,
-    Relations,
     Template,
     ValidationError,
     _get_dataclass_defaults,
@@ -86,7 +86,7 @@ def charm(template):
 
         def __init__(self, *args):
             super().__init__(*args)
-            self.foo = Relations(self, "foo", template)
+            self.foo = EndpointWrapper(self, "foo", template)
 
     return MyCharm
 
@@ -127,9 +127,9 @@ def test_defaulted_data_written_automatically(charm, defaulting):
     # relation not initialized yet: there should be no data at all
     relations = harness.charm.foo
     with pytest.raises(KeyError):
-        assert not relations.local_unit_data["bar"]
+        assert not relations.local_units_data[relations.local_unit]["bar"]
     with pytest.raises(KeyError):
-        assert not relations.local_app_data["foo"]
+        assert not relations.local_apps_data[relations.local_app]["foo"]
 
     relation_id = harness.add_relation(RELATION_NAME, REMOTE_APP)
 

@@ -15,11 +15,11 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from relation import (
+from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
+    EndpointWrapper,
     InvalidFieldNameError,
-    Relations,
     ValidationError,
 )
 
@@ -37,7 +37,7 @@ class RequirerCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = Relations(self, "foo")
+        self.foo = EndpointWrapper(self, "foo")
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def charm(harness, setup_relation) -> RequirerCharm:
 
 
 @pytest.fixture
-def relations(charm) -> Relations:
+def relations(charm) -> EndpointWrapper:
     return charm.foo
 
 

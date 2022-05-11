@@ -1,0 +1,5 @@
+name: relation-wrapper
+description: |  
+  Container for the relation_wrapper charm lib.
+summary: |
+  A charm lib to facilitate interacting with relation data.

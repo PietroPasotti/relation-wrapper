@@ -1,0 +1,28 @@
+"""TODO add docstring"""
+
+# The unique Charmhub library identifier, never change it
+LIBID = "4fbe502b173643b0b5baeeaa28bcab10"
+
+# Increment this major API version when introducing breaking changes
+LIBAPI = {{ version }}
+
+# Increment this PATCH version before using `charmcraft publish-lib` or reset
+# to 0 if you are raising the major API version
+LIBPATCH = {{ revision }}
+
+# CODE
+{{ py }}
+
+
+if __name__ == "__main__":
+    def _drop_types():
+        print("dropping lib stub file...")
+        from pathlib import Path
+        location = Path(__file__)
+        pyi_file = location.parent / 'endpoint_wrapper.pyi'
+        import textwrap
+        pyi = textwrap.dedent("""{{ pyi }}""")
+        pyi_file.write_text(pyi)
+        print(f"dropped {pyi_file}.")
+
+    _drop_types()
