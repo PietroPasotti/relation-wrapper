@@ -72,8 +72,8 @@ class MyCharm(CharmBase):
         foo_value: int = local_app_data['foo']
 
         # using dot notation:
-        # the IDE will autocomplete `.foo` for you:
-        foo_value = local_app_data.foo
+        # the IDE will autocomplete `.foo` for you, and mypy will know that foo_value_dot: int 
+        foo_value_dot = local_app_data.foo
         # mypy will bash you here, because `.foo` is typed as an int, and 2.3 is a float...
         local_app_data.foo = 2.3
 
@@ -97,8 +97,6 @@ class MyCharm(CharmBase):
             
         # we can also idiomatically read/write data
         # this charm implements the requirer side of foo, so we have to look at RequirerAppModel.
-        
-        # 
         
         for local_app_data in self.foo.local_apps_data.values():
             local_app_data['foo'] = 42
