@@ -21,7 +21,10 @@ if __name__ == "__main__":
         location = Path(__file__)
         pyi_file = location.parent / 'endpoint_wrapper.pyi'
         import textwrap
-        pyi = textwrap.dedent("""{{ pyi }}""")
+
+        # use triple single quotes to allow triple double quotes to
+        # occur in the pyi source.
+        pyi = textwrap.dedent('''{{ pyi }}''')
         pyi_file.write_text(pyi)
         print(f"dropped {pyi_file}.")
 
