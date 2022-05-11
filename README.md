@@ -151,6 +151,8 @@ class MyCharm(CharmBase):
 ```
 
 # Publishing
+
+Don't forget to open a PR with the version bumped.
 If you wish to bump the version (requires typer):
 ```sh 
 export PYTHONPATH=$PYTHONPATH:$(pwd)
@@ -164,3 +166,7 @@ python ./scripts/inline-lib.py
 ```
 
 After you've done that, you can use `sh ./scripts/publish` to publish to charmcraft.
+
+Now you're ready to use the lib in your charms:
+`charmcraft fetch-lib charms.relation_wrapper.v0.endpoint_wrapper`
+
