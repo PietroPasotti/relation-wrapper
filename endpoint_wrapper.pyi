@@ -1,6 +1,20 @@
-from typing import (Any, Callable, Dict, Generic, Iterable, List, Literal,
-                    Mapping, Optional, Protocol, Tuple, Type, TypeVar, Union,
-                    overload)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from ops.charm import CharmBase
 from ops.model import Application
@@ -37,8 +51,8 @@ class RelationModel(Generic[_A, _B, _C, _D]):
     remote_unit_data_model: _D
     @staticmethod
     def from_charm(
-        charm: CharmBase, relation_name: str, template: '_Template' = ...
-    ) -> 'RelationModel': ...
+        charm: CharmBase, relation_name: str, template: "_Template" = ...
+    ) -> "RelationModel": ...
     def get(self, name): ...
     def __init__(
         self,
@@ -97,17 +111,16 @@ DEFAULT_VALIDATOR: Union[Type[PydanticValidator], Type[DataclassValidator]]
 UnitOrApplication = Union[Unit, Application]
 T = TypeVar("T")
 
-class DataWrapperParams:
+class DataWrapperParams(Generic[T]):
     relation: OpsRelation
     data: Any
-    validator: _Validator
     validator: "_Validator"
     entity: "UnitOrApplication"
-    model: "Model"
+    model: T
     can_write: bool
 
 class DataWrapper(Generic[T]):
-    __datawrapper_params__: DataWrapperParams
+    __datawrapper_params__: DataWrapperParams[T]
 
     def __init__(
         self,
@@ -170,13 +183,14 @@ class Relation(Generic[_A, _B, _C, _D]):
     @property
     def valid(self) -> Optional[bool]: ...
     @property
-    def local_app_data(self) -> _A: ...  # lie...
+    def local_app_data(self) -> _A: ...
+    # FIXME: we don't have Proxy[T] yet, so we can't correctly type DataWrapper.
     @property
-    def remote_app_data(self) -> _B: ...  # lie...
+    def local_unit_data(self) -> _B: ...
     @property
-    def local_unit_data(self) -> _C: ...  # lie...
+    def remote_app_data(self) -> _C: ...
     @property
-    def remote_units_data(self) -> Mapping[Unit, _D]: ...  # lie...
+    def remote_units_data(self) -> Mapping[Unit, _D]: ...
 
 def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]: ...
 
@@ -214,27 +228,20 @@ class _EndpointWrapper(Generic[_A, _B, _C, _D]):
     @property
     def local_apps_data(
         self,
-    ) -> Dict[
-        Application, _A
-    ]: ...  # we don't have Proxy[T] yet, so we can't correctly type DataWrapper. So we Hide it.
-    @property
-    def remote_apps_data(
-        self,
-    ) -> Dict[
-        Application, _B
-    ]: ...  # we don't have Proxy[T] yet, so we can't correctly type DataWrapper. So we Hide it.
+    ) -> Dict[Application, _A]: ...
+    # FIXME: we don't have Proxy[T] yet, so we can't correctly type DataWrapper.
     @property
     def local_units_data(
         self,
-    ) -> Dict[
-        Unit, _C
-    ]: ...  # we don't have Proxy[T] yet, so we can't correctly type DataWrapper. So we Hide it.
+    ) -> Dict[Unit, _B]: ...
+    @property
+    def remote_apps_data(
+        self,
+    ) -> Dict[Application, _C]: ...
     @property
     def remote_units_data(
         self,
-    ) -> Dict[
-        Unit, _D
-    ]: ...  # we don't have Proxy[T] yet, so we can't correctly type DataWrapper. So we Hide it.
+    ) -> Dict[Unit, _D]: ...
 
 # template and requirer role
 @overload

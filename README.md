@@ -150,6 +150,17 @@ class MyCharm(CharmBase):
         assert foo.remote_app_data['arnold']['terminator']
 ```
 
-TODO:
-- inline-lib command to turn .py and .pyi into a single .py file ready to be distributed as charm lib
-- pub-lib command to take current version and publish charm lib under that version/revision
+# Publishing
+If you wish to bump the version (requires typer):
+```sh 
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+python ./scripts/bump-version.py [minor=True] [major=False]
+```
+
+To inline (embed) the stub file in the library code:
+```sh 
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+python ./scripts/inline-lib.py
+```
+
+After you've done that, you can use `sh ./scripts/publish` to publish to charmcraft.

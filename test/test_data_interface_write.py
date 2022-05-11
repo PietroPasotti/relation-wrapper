@@ -2,14 +2,18 @@ from itertools import chain
 
 import pytest
 import yaml
-from conftest import (RequirerAppModel, bar_template, mock_relation_data,
-                      reinit_charm)
+from conftest import RequirerAppModel, bar_template, mock_relation_data, reinit_charm
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import (CannotWriteError, CoercionError, EndpointWrapper,
-                              InvalidFieldNameError, ValidationError,
-                              _EndpointWrapper)
+from endpoint_wrapper import (
+    CannotWriteError,
+    CoercionError,
+    EndpointWrapper,
+    InvalidFieldNameError,
+    ValidationError,
+    _EndpointWrapper,
+)
 
 RELATION_NAME = "foo"
 LOCAL_APP = "local"
@@ -200,7 +204,7 @@ def test_bad_data_overwrite_good_data(harness, relation_id, relations):
 @pytest.mark.parametrize("leader", ((True, False)))
 def test_local_app_data_write_permissions(harness, relations, leader):
     harness.set_leader(leader)
-    assert relations.relations[0].local_app_data._can_write == leader
+    assert relations.relations[0].local_app_data.__datawrapper_params__.can_write == leader
     # can write local app only if leader
     if leader:
         relations.relations[0].local_app_data["foo"] = 41
@@ -213,7 +217,7 @@ def test_local_app_data_write_permissions(harness, relations, leader):
 def test_local_unit_data_write_permissions(harness, relations, leader):
     # can always write local unit
     harness.set_leader(leader)
-    assert relations.relations[0].local_unit_data._can_write is True
+    assert relations.relations[0].local_unit_data.__datawrapper_params__.can_write is True
     with pytest.raises(InvalidFieldNameError):
         relations.relations[0].local_unit_data["foo"] = "41"
 
@@ -225,6 +229,6 @@ def test_remote_entities_data_write_permissions(harness, relations, leader):
     for rem_data in chain(
         relations.remote_units_data.values(), relations.remote_units_data.values()
     ):
-        assert rem_data._can_write is False
+        assert rem_data.__datawrapper_params__.can_write is False
         with pytest.raises(CannotWriteError):
             rem_data["foo"] = "41"

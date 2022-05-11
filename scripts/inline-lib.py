@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from textwrap import dedent
 
 import jinja2 as jinja2
 
@@ -10,6 +9,7 @@ root = Path()
 
 
 def inline_lib():
+    print("inlining endpoint_wrapper lib and stub file...")
     py = root / "endpoint_wrapper.py"
     pyi = root / "endpoint_wrapper.pyi"
     template = root / "lib_template.jinja"
@@ -27,10 +27,6 @@ def inline_lib():
         / "endpoint_wrapper.py"
     )
 
-    if lib_file.exists() and input("overwrite?") not in "YESyes":
-        print("aborting...")
-        return
-
     if not lib_file.parent.exists():
         os.makedirs(lib_file.parent)
 
@@ -42,7 +38,7 @@ def inline_lib():
             "version": __version__.version,
         }
     )
-
+    print(f"dropped inlined {lib_file}.")
     lib_file.write_text(rendered)
 
 

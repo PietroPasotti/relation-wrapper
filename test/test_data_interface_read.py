@@ -2,9 +2,15 @@ from itertools import chain
 
 import pytest
 import yaml
-from conftest import (ProviderAppModel, ProviderUnitModel, RequirerAppModel,
-                      RequirerUnitModel, bar_template, mock_relation_data,
-                      reinit_charm)
+from conftest import (
+    ProviderAppModel,
+    ProviderUnitModel,
+    RequirerAppModel,
+    RequirerUnitModel,
+    bar_template,
+    mock_relation_data,
+    reinit_charm,
+)
 from ops.charm import CharmBase
 from ops.testing import Harness
 

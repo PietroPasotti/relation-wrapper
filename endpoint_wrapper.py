@@ -7,8 +7,18 @@ import logging
 import typing
 from dataclasses import MISSING, Field, dataclass, is_dataclass
 from functools import wraps
-from typing import (Any, Callable, Dict, Generic, Iterable, Mapping, Optional,
-                    Tuple, Type, TypeVar, Union)
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Iterable,
+    Mapping,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from ops.charm import CharmBase
 from ops.framework import Object
@@ -29,16 +39,16 @@ if typing.TYPE_CHECKING:
     class _Validator(Protocol):
         model: Model
 
-        def validate(self, data: dict, _raise: bool = False) -> bool:
+        def validate(self, data: dict, _raise: bool = False) -> bool:  # type: ignore
             pass
 
-        def check_field(self, key) -> Any:
+        def check_field(self, key) -> Any:  # type: ignore
             pass
 
-        def deserialize(self, key, value) -> Any:
+        def deserialize(self, key, value) -> Any:  # type: ignore
             pass
 
-        def serialize(self, key, value) -> str:
+        def serialize(self, key, value) -> str:  # type: ignore
             pass
 
 
@@ -128,7 +138,7 @@ class RelationModel:
 
     @staticmethod
     def from_charm(
-        charm: CharmBase, relation_name: str, template: _Template = None
+        charm: CharmBase, relation_name: str, template: Optional[_Template] = None
     ) -> "RelationModel":
         """Guess the model from a charm's meta and a template."""
         if not template:
@@ -201,7 +211,7 @@ class DataclassValidator:
 
         for key, value in data.items():
             try:
-                field: Field = self.check_field(key)
+                field: Optional[Field] = self.check_field(key)
             except InvalidFieldNameError as e:
                 logger.error(
                     f"{key} is an invalid field name; value={value}; error={e}"
@@ -212,7 +222,7 @@ class DataclassValidator:
                 self.deserialize(key, value)
             except CoercionError as e:
                 logger.error(
-                    f"{key} can't be cast to the expected type {field.type}; "
+                    f"{key} can't be cast to the expected field {field}; "
                     f"value={value}; error={e}; this could be a spurious "
                     f"error if you are trying to use complex datatypes."
                 )
@@ -220,7 +230,7 @@ class DataclassValidator:
 
         missing_data = False
         for name, field in model.__dataclass_fields__.items():
-            if name not in data and field.default is MISSING:
+            if name not in data and field.default is MISSING:  # type: ignore
                 missing_data = True
 
         if missing_data:
@@ -251,7 +261,7 @@ class DataclassValidator:
             return json.dumps(value)
 
         # check that the key is a valid field
-        field = self.check_field(key)
+        field: Any = self.check_field(key)
         # check that the field type matches the type of the object we're dumping;
         # otherwise we won't be able to deserialize it later.
         if not isinstance(value, field.type):
@@ -264,7 +274,7 @@ class DataclassValidator:
         if is_dataclass(value):
             return json.dumps(asdict(value))
 
-        return json.dumps(value)
+        return str(value)
 
     def deserialize(self, key: str, value: str) -> Any:
         """Cast back databag content to its intended type."""
@@ -275,7 +285,7 @@ class DataclassValidator:
                 logger.error("unable to decode {}; returning it raw.".format(value))
                 return value
 
-        field = self.check_field(key)
+        field: Any = self.check_field(key)
         try:
             return self._parse_obj_as(value, field.type)
         except Exception as e:
@@ -303,8 +313,7 @@ class PydanticValidator:
 
     def _load(self):
         try:
-            from pydantic import (BaseModel, ValidationError, parse_obj_as,
-                                  parse_raw_as)
+            from pydantic import BaseModel, ValidationError, parse_obj_as, parse_raw_as
         except ModuleNotFoundError:
             raise RuntimeError("this validator requires `pydantic`")
 
@@ -342,7 +351,7 @@ class PydanticValidator:
         if not self.model:
             return None
 
-        field = self.model.__fields__.get(name)
+        field: Any = self.model.__fields__.get(name)
         if not field:
             raise InvalidFieldNameError(name)
         return field
@@ -350,7 +359,7 @@ class PydanticValidator:
     @_loads
     def coerce(self, key, value):
         """Coerce obj to the given field."""
-        field = self.check_field(key)
+        field: Any = self.check_field(key)
         try:
             return self._parse_obj_as(field.type_, value)
         except self._PydanticValidationError as e:
@@ -382,7 +391,7 @@ class PydanticValidator:
                 logger.error("unable to decode {}; returning it raw.".format(value))
                 return value
 
-        field = self.check_field(obj)
+        field: Any = self.check_field(obj)
         return self._parse_raw_as(field.type_, value)
 
 
@@ -420,25 +429,25 @@ class _RelationBase:
 def _needs_write_permission(method):
     @wraps(method)
     def wrapper(self: "DataWrapper", *args, **kwargs):
-        if not self._can_write:
-            raise CannotWriteError(self._relation, self._entity)
+        params = self.__datawrapper_params__
+        if not params.can_write:
+            raise CannotWriteError(params.relation, params.entity)
         return method(self, *args, **kwargs)
 
     return wrapper
 
 
 @dataclass
-class DataWrapperParams:
+class DataWrapperParams:  # noqa: D101
     relation: OpsRelation
     data: Any
-    validator: _Validator
     validator: "_Validator"
     entity: "UnitOrApplication"
     model: "Model"
     can_write: bool
 
 
-class DataWrapper(Generic[M], collections.abc.MutableMapping):
+class DataWrapper(Generic[M], collections.abc.MutableMapping):  # type: ignore
     """Wrapper for the databag of a specific entity involved in a relation."""
 
     def __init__(
@@ -450,7 +459,7 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
         can_write: bool = False,
     ):
 
-        # fixme: dedup issue here?
+        # fixme: dedup issue here; externalize model in Validator.
         validator.model = model
         # keep the namespace clean: everything we put here is a name the user can't use
         self.__datawrapper_params__ = DataWrapperParams(
@@ -518,9 +527,10 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):
         valid_str = (
             "valid" if validity else ("invalid" if validity is False else "unfilled")
         )
+        params = self.__datawrapper_params__
         return (
-            f"<{self.__datawrapper_params__.relation.name}[{type(self.__datawrapper_params__.entity).__name__}:: "
-            f"{self.__datawrapper_params__.entity.name}] {repr(self.__datawrapper_params__.data)} "
+            f"<{params.relation.name}[{type(params.entity).__name__}:: "
+            f"{params.entity.name}] {repr(params.data)} "
             f"({valid_str})>"
         )
 
@@ -542,7 +552,7 @@ class Relation(_RelationBase):
         charm: CharmBase,
         relation: OpsRelation,
         model: RelationModel,
-        validator: Type["_Validator"] = DEFAULT_VALIDATOR,
+        validator: Type = DEFAULT_VALIDATOR,
     ):
         super().__init__(charm=charm, relation_name=relation.name, model=model)
         self._validator = validator()
@@ -684,9 +694,9 @@ class _EndpointWrapper(_RelationBase, Object):
         self,
         charm: CharmBase,
         relation_name: str,
-        template: _Template = None,
-        role: "Role" = None,
-        validator: Type["_Validator"] = DEFAULT_VALIDATOR,
+        template: Optional[_Template] = None,
+        role: Optional["Role"] = None,
+        validator: Type = DEFAULT_VALIDATOR,
         **kwargs,
     ):
         """Initialize."""
@@ -823,8 +833,8 @@ class _EndpointWrapper(_RelationBase, Object):
         if isinstance(data, dict):
             return
 
-        assert data._can_write
-        if model := data._model:
+        assert data.__datawrapper_params__.can_write
+        if model := data.__datawrapper_params__.model:
             defaults = get_defaults(model)
             for key, value in defaults.items():
                 data[key] = value
@@ -855,27 +865,12 @@ def _get_pydantic_defaults(model):
     }
 
 
-def EndpointWrapper(*args, **kwargs):
+def EndpointWrapper(*args, **kwargs):  # noqa: D103 N802
     return _EndpointWrapper(*args, **kwargs)
 
 
-def Template(
-    # requirer_unit_model=None,
-    # requirer_app_model=None,
-    # provider_unit_model=None,
-    # provider_app_model=None,
-    requirer: DataBagModel = None,
-    provider: DataBagModel = None,
+def Template(  # noqa: D103 N802
+    requirer: Optional[DataBagModel] = None,
+    provider: Optional[DataBagModel] = None,
 ):
-    # def _coalesce(main, app, unit):
-    #     if main:
-    #         if unit or app:
-    #             raise ValueError(
-    #                 'invalid usage: make_template called with both a '
-    #                 'DataBagModel and some specific unit/app model.'
-    #             )
-    #         return main
-    #     return DataBagModel(app, unit)
-    # _requirer = _coalesce(requirer, requirer_app_model, requirer_unit_model)
-    # _provider = _coalesce(provider, provider_app_model, provider_unit_model)
     return _Template(requirer=requirer, provider=provider)
