@@ -19,6 +19,7 @@ from typing import (
     TypeVar,
     Union,
     overload,
+    Iterator,
 )
 
 from ops.charm import CharmBase
@@ -783,6 +784,7 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             self._publish_defaults(relation.local_app_data)
         self._publish_defaults(relation.local_unit_data)
 
+    # todo: wrap events before emitting them forward
     def wrap(self, relation: "OpsRelation") -> Relation[_A, _B, _C, _D]:
         """Get the Relation wrapper object from an ops Relation object."""
         return next(filter(lambda r: r.wraps(relation), self.relations))
@@ -804,6 +806,9 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             )
             for r in self._relations
         )
+
+    def __iter__(self) -> Iterator[Relation[_A, _B, _C, _D], ...]:
+        yield from self.relations
 
     @property
     def remote_units_data_valid(self):

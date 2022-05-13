@@ -1,10 +1,63 @@
 # relation-wrapper
 
 Provides high-level API to code relation interfaces with.
-Dependencies:
+
 - Tested: Python 3.8+
 
-In charm code:
+## usage
+
+The main idea of EndpointWrapper is to make accessing (and reasoning about) 
+relation data easier. The days of wondering 'is relation.app the provider, or the requirer app?'
+are over.
+
+```python
+from ops import CharmBase
+from endpoint_wrapper import EndpointWrapper
+
+class MyCharm(CharmBase):
+    META = {'requires': {'foo': {'interface': 'bar'}}}
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.foo = EndpointWrapper(
+            self, 'foo',
+            on_changed=self._on_foo_changed,
+            on_joined=self._on_foo_joined,
+        )
+        
+    def _on_foo_joined(self, _):
+        unit_ips = []
+        unit_codenames = []
+
+        # grab some data from all related remote units (all 'foo' relations!)
+        for relation in self.foo:
+            for unit, unit_databag in relation.remote_units_data.items():
+                unit_ips.append(unit_databag['IP'])
+                unit_codenames.append(unit_databag['CODENAME'])
+        
+        # push it to all local application databags (all 'foo' relations!)
+        for relation in self.foo:
+            relation.local_app_data['unit_ips'] = str(unit_ips)
+            relation.local_app_data['unit_codenames'] = str(unit_codenames)
+        
+    def _on_foo_changed(self, event):
+        foo = self.foo.wrap(event.relation)  
+        foo.local_app_data.cheese = 'cake'
+        foo.local_app_data.rambo = 'film'
+        assert foo.remote_app_data['arnold']['terminator'] == 42
+```
+
+## typing and validating
+
+What if you want to type the contents of the databag?
+What you typically have is, a relation interface is linked to four schemas:
+ - a requirer app databag schema
+ - a requirer unit databag schema (applies to all units)
+ - a provider app databag schema
+ - a provider unit databag schema (applies to all units)
+
+We call the group of four schemas defining a relation its `Template`.
+Usage:
 
 ```python
 from pydantic import BaseModel
@@ -13,42 +66,38 @@ class RequirerAppModel(BaseModel):
 
 class ProviderUnitModel(BaseModel):
     bar: float
-```
-Alternatively, you can use dataclasses and things will work just the same 
-(but validation will be stricter, if enabled).
 
+# Alternatively, you can use dataclasses and things will work just the same
+# (I think technically you can also mix the two, but it might need some testing)
 
-```python
 from dataclasses import dataclass
 
 @dataclass
-class RequirerAppModel:
-    foo: int
+class RequirerUnitModel:
+    foo: str
     
 @dataclass
-class ProviderUnitModel:
+class ProviderAppModel:
     bar: float
-```
 
-Now let's define a template: that is, a spec of the shape of all 
-databags involved in the relation.
+# Now let's define a template: that is, a spec of the shape of all 
+# databags involved in the relation.
 
-```python
 from endpoint_wrapper import Template, DataBagModel
 
 template = Template(
     requirer=DataBagModel(
-        app=RequirerAppModel,
+        app=RequirerAppModel, 
+        unit=RequirerUnitModel
     ),
     provider=DataBagModel(
+        app=ProviderAppModel, 
         unit=ProviderUnitModel
     )
 )
-```
 
-Now we can use the template in combination with the EndpointWrapper:
+# Now we can use the template in combination with the EndpointWrapper:
 
-```python
 from ops import CharmBase
 from endpoint_wrapper import EndpointWrapper, ValidationError
 
@@ -115,39 +164,6 @@ class MyCharm(CharmBase):
         # we can 'wrap' an event's relation idiomatically:
         foo_relation = self.foo.wrap(event.relation)
         assert foo_relation.remote_app_data.valid
-```
-
-Note that the whole templating thing is fully optional.
-EndpointWrapper is useful also without any templating:
-
-```python
-from ops import CharmBase
-from endpoint_wrapper import EndpointWrapper
-from dataclasses import dataclass
-
-@dataclass
-class Rambo:
-    film: int
-    
-@dataclass
-class Arnold:
-    terminator: True
-    
-class MyCharm(CharmBase):
-    META = {'requires': {'foo': {'interface': 'bar'}}}
-
-    def __init__(self, *args):
-        super().__init__(*args)
-        self.foo = EndpointWrapper(
-            self, 'foo',
-            on_changed=self._on_foo_changed
-        )
-        
-    def _on_foo_changed(self, event):
-        foo = self.foo.wrap(event.relation)
-        foo.local_app_data.cheese = 'cake'
-        foo.local_app_data.rambo = Rambo(film=2)
-        assert foo.remote_app_data['arnold']['terminator']
 ```
 
 # Publishing
