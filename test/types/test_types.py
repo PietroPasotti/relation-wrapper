@@ -1,19 +1,11 @@
-import re
 from dataclasses import dataclass
-from pathlib import Path
-from subprocess import PIPE, Popen
 from typing import Type
 
 import pytest
 from ops.charm import CharmBase
+from pyright_test import pyright_test
 
-from endpoint_wrapper import (
-    DataBagModel,
-    DataWrapper,
-    EndpointWrapper,
-    Template,
-    _EndpointWrapper,
-)
+from endpoint_wrapper import DataBagModel, EndpointWrapper, Template, _EndpointWrapper
 
 
 def pyright_check_inversion() -> None:
@@ -118,12 +110,11 @@ def pyright_check_partial_template_provider() -> None:
     prov_remote_unit_data = prov_relation.remote_units_data[
         prov_relation.remote_units[0]
     ]
-    prov_value_foo = (
-        prov_remote_unit_data.foo  # pyright: expect-error Cannot access member "foo" for type "None"
-    )
-    prov_value_bar = (
-        prov_remote_unit_data.bar  # pyright: expect-error Cannot access member "bar" for type "None"
-    )
+    reveal_type(prov_remote_unit_data)  # pyright: expect-type None
+    # fmt: off
+    prov_remote_unit_data.foo  # pyright: expect-error
+    prov_remote_unit_data.bar  # pyright: expect-error
+    # fmt: on
 
 
 def pyright_check_pydantic_model() -> None:
@@ -160,31 +151,5 @@ def pyright_check_pydantic_model() -> None:
     data: Type[RequirerAppModel] = foo.relations[0].local_app_data
 
 
-err = re.compile(r"(?P<file>.*):(?P<line>\d*):\d* - error: (?P<error>.*)")
-decl = re.compile(r".*# pyright: expect-error(?P<reason> .*)?")
-
-
-def test_types():
-    this_file = Path(__file__)
-    proc = Popen(["pyright", str(this_file)], stdout=PIPE)
-    proc.wait()
-    out = proc.stdout.read().decode("utf-8")  # type: ignore
-
-    errors = err.findall(out)
-    source_lines = this_file.read_text().split("\n")
-
-    failures = []
-
-    # check that all errors are expected
-    for error in errors:
-        file, line, reason = error
-        if match := decl.match(source_lines[int(line) - 1]):
-            groups = match.groups()
-            expected_reason = groups[0]
-            if expected_reason is not None and expected_reason.strip() != reason:
-                failures.append(f"Expected failure for {expected_reason}; got {reason}")
-        else:
-            failures.append(", ".join(error))
-
-    # todo: check that all expected failures occur
-    assert not failures, "\n".join(failures)
+def test_with_pyright():
+    pyright_test(__file__)
