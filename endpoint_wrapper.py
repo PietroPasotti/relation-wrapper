@@ -11,6 +11,7 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Iterator,
     Literal,
     Mapping,
     Optional,
@@ -19,7 +20,6 @@ from typing import (
     TypeVar,
     Union,
     overload,
-    Iterator,
 )
 
 from ops.charm import CharmBase
@@ -807,7 +807,7 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             for r in self._relations
         )
 
-    def __iter__(self) -> Iterator[Relation[_A, _B, _C, _D], ...]:
+    def __iter__(self) -> Iterator[Relation[_A, _B, _C, _D]]:
         yield from self.relations
 
     @property
