@@ -243,7 +243,7 @@ class DataclassValidator:
             logger.error(f"cannot cast {obj} to {type_}; giving up...")
             raise
 
-    def validate(self, data: dict, _raise: bool = False):
+    def validate(self, data: dict):
         """Full schema validation: check data matches model."""
         model = self.model
         if not model:  # no model --> all data is valid
@@ -281,8 +281,6 @@ class DataclassValidator:
             return None
 
         if err:
-            if _raise:
-                raise ValidationError(self.model, data)
             return False
         return True
 
@@ -370,7 +368,7 @@ class PydanticValidator:
         self._loaded = True
 
     @_loads
-    def validate(self, data: dict, _raise: bool = False):
+    def validate(self, data: dict):
         """Full schema validation: check data matches model."""
         if not self.model:  # no model --> all data is valid
             return True
@@ -384,8 +382,6 @@ class PydanticValidator:
 
         if err:
             if data:
-                if _raise:
-                    raise ValidationError(self.model, data)
                 return False
             return None
 
@@ -425,7 +421,10 @@ class PydanticValidator:
         # dump
         if isinstance(value, self._BaseModel):
             return value.json()
-        return json.dumps(value)
+        elif isinstance(value, str):
+            return value
+        else:
+            return json.dumps(value)
 
     @_loads
     def deserialize(self, obj: str, value: str) -> Any:
@@ -438,6 +437,8 @@ class PydanticValidator:
                 return value
 
         field: Any = self.check_field(obj)
+        if isinstance(value, field.type_):
+            return value
         return self._parse_raw_as(field.type_, value)
 
 
@@ -511,7 +512,7 @@ class DataWrapper(Generic[_T], collections.abc.MutableMapping):  # type: ignore
         # fixme: potential dedup issue here; externalize model in Validator.
         validator.model = model
         # keep the namespace clean: everything we put here is a name the user can't use
-        self.__datawrapper_params__ = DataWrapperParams(
+        self.__dict__["__datawrapper_params__"] = DataWrapperParams(
             relation=relation,
             data=relation.data[entity],
             validator=validator,
@@ -557,19 +558,11 @@ class DataWrapper(Generic[_T], collections.abc.MutableMapping):  # type: ignore
     def __bool__(self):
         return bool(self.__datawrapper_params__.data)
 
-    # fixme consider hiding valid and validate; keep namespace cleaner
-    @property
-    def valid(self) -> Optional[bool]:
-        """Whether this databag as a whole is valid."""
-        return self.__datawrapper_params__.validator.validate(
-            self.__datawrapper_params__.data
-        )
+    def __getattr__(self, item: str):
+        return self[item]
 
-    def validate(self):
-        """Validate the databag and raise if not valid."""
-        self.__datawrapper_params__.validator.validate(
-            self.__datawrapper_params__.data, _raise=True
-        )
+    def __setattr__(self, key, value):
+        self[key] = value
 
     def __repr__(self):
         validity = self.valid
@@ -582,6 +575,20 @@ class DataWrapper(Generic[_T], collections.abc.MutableMapping):  # type: ignore
             f"{params.entity.name}] {repr(params.data)} "
             f"({valid_str})>"
         )
+
+
+def databag_valid(data: DataWrapper) -> Optional[bool]:
+    """Whether this databag as a whole is valid."""
+    return data.__datawrapper_params__.validator.validate(
+        data.__datawrapper_params__.data
+    )
+
+
+def validate_databag(data: DataWrapper):
+    """Validate the databag and raise if not valid."""
+    data.__datawrapper_params__.validator.validate(
+        data.__datawrapper_params__.data, _raise=True
+    )
 
 
 class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
@@ -632,7 +639,7 @@ class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
     def _is_valid(data: Union[_A, _B, _C, _D]) -> Optional[bool]:
         # fixme: we need to ignore type here because mypy thinks data is _A
         #  while it is DataWrapper[_A]
-        return data.valid  # type: ignore
+        return databag_valid(data)  # type: ignore
 
     @property
     def remote_units_data_valid(self) -> Optional[bool]:

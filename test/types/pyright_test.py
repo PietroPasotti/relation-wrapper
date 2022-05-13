@@ -77,7 +77,7 @@ def _check_types(numbered_source, out):
         # check that all errors are expected
         if line not in expected_error_map:
             failures.append((line, f"Unexpected failure: {reason!r}"))
-        elif (expected_reason := expected_error_map[line]) != '':
+        elif (expected_reason := expected_error_map[line]) != "":
             if expected_reason != reason:
                 failures.append(
                     (line, f"Expected failure for {expected_reason!r}; got {reason!r}")

@@ -40,8 +40,19 @@ class RequirerCharm(CharmBase):
         )
 
     def _handle(self, event):
-        local_app_data: RequirerAppModel = self.foo.relations[0].local_app_data
-        local_app_data.foo = "44"
+        pass
+
+
+@pytest.fixture(params=[[0], [1]], ids=["setattr", "setitem"])
+def write(request):
+    if request.param:
+        return setattr
+    else:
+
+        def _setitem(obj, key, value):
+            obj[key] = value
+
+        return _setitem
 
 
 @pytest.fixture
@@ -96,10 +107,10 @@ def mock_bad_data(harness, relation_id):
     )
 
 
-def test_data_write_valid_data(harness, relation_id, relations):
+def test_data_write_valid_data(harness, relation_id, relations, write):
     harness.set_leader(True)
     assert not harness.get_relation_data(relation_id, LOCAL_APP).get("foo")
-    relations.relations[0].local_app_data["foo"] = 41
+    write(relations.relations[0].local_app_data, "foo", 41)
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == "41"
     assert relations.relations[0].local_app_data["foo"] == 41
     assert relations.local_app_data_valid
@@ -123,33 +134,33 @@ def test_write_data_setattr(harness, relation_id, relations):
     assert relations.relations[0].local_app_data.foo == 41
 
 
-def test_data_overwrite_valid_data(harness, relation_id, relations):
+def test_data_overwrite_valid_data(harness, relation_id, relations, write):
     harness.set_leader(True)
     # set it up with valid data
     mock_good_data(harness, relation_id)
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == 42
 
     # now overwrite it with more valid data
-    relations.relations[0].local_app_data["foo"] = 41
+    write(relations.relations[0].local_app_data, "foo", 41)
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == "41"
     assert relations.relations[0].local_app_data["foo"] == 41
     assert relations.valid
 
 
-def test_data_write_invalid_data(harness, relation_id, relations):
+def test_data_write_invalid_data(harness, relation_id, relations, write):
     harness.set_leader(True)
     assert not harness.get_relation_data(relation_id, LOCAL_APP).get("foo")
     assert relations.valid is None
 
     with pytest.raises(ValidationError):
-        relations.relations[0].local_app_data["foo"] = "invalid data"
+        write(relations.relations[0].local_app_data, "foo", "invalid data")
 
     # data not changed
     assert not harness.get_relation_data(relation_id, LOCAL_APP).get("foo")
     assert relations.valid is None
 
 
-def test_data_overwrite_invalid_data(harness, relation_id, relations):
+def test_data_overwrite_invalid_data(harness, relation_id, relations, write):
     harness.set_leader(True)
     # set it up with invalid data
     mock_bad_data(harness, relation_id)
@@ -158,14 +169,14 @@ def test_data_overwrite_invalid_data(harness, relation_id, relations):
 
     # now overwrite it with bad data
     with pytest.raises(CoercionError):
-        relations.relations[0].local_app_data["foo"] = "even more invalid data"
+        write(relations.relations[0].local_app_data, "foo", "even more invalid data")
 
     # data not changed
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == "invalid data a"
     assert relations.valid is False
 
 
-def test_good_data_overwrite_invalid_data(harness, relation_id, relations):
+def test_good_data_overwrite_invalid_data(harness, relation_id, relations, write):
     harness.set_leader(True)
     # set it up with good data
     mock_good_data(harness, relation_id)
@@ -173,21 +184,21 @@ def test_good_data_overwrite_invalid_data(harness, relation_id, relations):
 
     # now overwrite it with bad data
     with pytest.raises(ValidationError):
-        relations.relations[0].local_app_data["foo"] = "even more invalid data"
+        write(relations.relations[0].local_app_data, "foo", "even more invalid data")
 
     # data not changed
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == 42
     assert relations.valid
 
 
-def test_bad_data_overwrite_good_data(harness, relation_id, relations):
+def test_bad_data_overwrite_good_data(harness, relation_id, relations, write):
     harness.set_leader(True)
     # set it up with bad data
     mock_bad_data(harness, relation_id)
     assert relations.valid is False
 
     # now overwrite it with good data
-    relations.relations[0].local_app_data["foo"] = 41
+    write(relations.relations[0].local_app_data, "foo", 41)
     assert relations.valid is False
 
     # we cannot write remote units from the charm, so we force it:
@@ -204,32 +215,32 @@ def test_bad_data_overwrite_good_data(harness, relation_id, relations):
 
 
 @pytest.mark.parametrize("leader", ((True, False)))
-def test_local_app_data_write_permissions(harness, relations, leader):
+def test_local_app_data_write_permissions(harness, relations, leader, write):
     harness.set_leader(leader)
     assert (
         relations.relations[0].local_app_data.__datawrapper_params__.can_write == leader
     )
     # can write local app only if leader
     if leader:
-        relations.relations[0].local_app_data["foo"] = 41
+        write(relations.relations[0].local_app_data, "foo", 41)
     else:
         with pytest.raises(CannotWriteError):
-            relations.relations[0].local_app_data["foo"] = 41
+            write(relations.relations[0].local_app_data, "foo", 41)
 
 
 @pytest.mark.parametrize("leader", ((True, False)))
-def test_local_unit_data_write_permissions(harness, relations, leader):
+def test_local_unit_data_write_permissions(harness, relations, leader, write):
     # can always write local unit
     harness.set_leader(leader)
     assert (
         relations.relations[0].local_unit_data.__datawrapper_params__.can_write is True
     )
     with pytest.raises(InvalidFieldNameError):
-        relations.relations[0].local_unit_data["foo"] = "41"
+        write(relations.relations[0].local_unit_data, "foo", "41")
 
 
 @pytest.mark.parametrize("leader", ((True, False)))
-def test_remote_entities_data_write_permissions(harness, relations, leader):
+def test_remote_entities_data_write_permissions(harness, relations, leader, write):
     # can never write remote entities
     harness.set_leader(leader)
     for rem_data in chain(
@@ -237,10 +248,10 @@ def test_remote_entities_data_write_permissions(harness, relations, leader):
     ):
         assert rem_data.__datawrapper_params__.can_write is False
         with pytest.raises(CannotWriteError):
-            rem_data["foo"] = "41"
+            write(rem_data, "foo", "41")
 
 
-def test_validator_dedup(harness, relations, relation_id):
+def test_validator_dedup(harness, relations, relation_id, write):
     harness.set_leader(True)
     # set it up with valid data
     mock_good_data(harness, relation_id)
@@ -250,6 +261,6 @@ def test_validator_dedup(harness, relations, relation_id):
     # we get the local unit databag
     local_unit_data = relations.relations[0].local_unit_data
 
-    local_app_data["foo"] = 41
+    write(local_app_data, "foo", 41)
     with pytest.raises(InvalidFieldNameError):
-        local_unit_data["foo"] = 41
+        write(local_unit_data, "foo", 41)
