@@ -1,3 +1,5 @@
+#! /bin/python3
+
 import os
 from pathlib import Path
 
@@ -9,13 +11,11 @@ root = Path()
 
 
 def inline_lib():
-    print("inlining endpoint_wrapper lib and stub file...")
+    print("Rendering endpoint_wrapper lib...")
     py = root / "endpoint_wrapper.py"
-    pyi = root / "endpoint_wrapper.pyi"
     template = root / "lib_template.jinja"
 
     assert py.exists()
-    assert pyi.exists()
     assert template.exists()
 
     lib_file = (
@@ -33,12 +33,11 @@ def inline_lib():
     rendered = jinja2.Template(template.read_text()).render(
         {
             "py": py.read_text(),
-            "pyi": pyi.read_text(),
             "revision": __version__.revision,
             "version": __version__.version,
         }
     )
-    print(f"dropped inlined {lib_file}.")
+    print(f"Dropped {lib_file}.")
     lib_file.write_text(rendered)
 
 

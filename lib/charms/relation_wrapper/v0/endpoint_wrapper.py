@@ -1,4 +1,4 @@
-"""TODO add docstring"""
+"""Relation wrapper for Charms."""
 
 # The unique Charmhub library identifier, never change it
 LIBID = "4fbe502b173643b0b5baeeaa28bcab10"
@@ -8,10 +8,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 4
-
-# CODE
-"""Relation wrapper for Charms."""
+LIBPATCH = 5
 
 import collections
 import dataclasses
@@ -22,66 +19,74 @@ from dataclasses import MISSING, Field, dataclass, is_dataclass
 from functools import wraps
 from typing import (
     Any,
+    Callable,
     Dict,
     Generic,
     Iterable,
+    Literal,
     Mapping,
     Optional,
     Tuple,
     Type,
     TypeVar,
     Union,
+    overload,
 )
 
 from ops.charm import CharmBase
 from ops.framework import Object
-from ops.model import Application
-from ops.model import Model as OpsModel
-from ops.model import Relation as OpsRelation
-from ops.model import Unit
 
 if typing.TYPE_CHECKING:
-    from typing import Literal, Protocol
+    from typing import Protocol
 
+    from ops.model import Application
+    from ops.model import Model as OpsModel
+    from ops.model import Relation as OpsRelation
+    from ops.model import RelationDataContent, Unit
+
+    # fmt: off
     Role = Literal["requirer", "provider"]
     Model = Any  # dataclass or pydantic model
     ModelName = Literal["local_app", "remote_app", "local_unit", "remote_unit"]
     Models = Mapping[ModelName, Optional[Model]]
-    UnitOrApplication = Union[Unit, Application]
+    UnitOrApplication = Union["Unit", "Application"]
 
     class _Validator(Protocol):
+        _parse_obj_as: Callable[[Type, Any], str]
+        _parse_raw_as: Callable[[Type, str], Any]
+        _model: Any
         model: Model
-
-        def validate(self, data: dict, _raise: bool = False) -> bool:  # type: ignore
-            pass
-
-        def check_field(self, key) -> Any:  # type: ignore
-            pass
-
-        def deserialize(self, key, value) -> Any:  # type: ignore
-            pass
-
-        def serialize(self, key, value) -> str:  # type: ignore
-            pass
-
+        def validate(self, data: Mapping, _raise: bool = False) -> bool: ...  # type: ignore
+        def check_field(self, key: str) -> Any: ...  # type: ignore
+        def deserialize(self, key: str, value: str) -> Any: ...  # type: ignore
+        def serialize(self, key: str, value: Any) -> str: ...  # type: ignore
+    # fmt: on
 
 logger = logging.getLogger(__name__)
 
+
+_A = TypeVar("_A")
+_B = TypeVar("_B")
+_C = TypeVar("_C")
+_D = TypeVar("_D")
 _T = TypeVar("_T")
-M = TypeVar("M")
+
+_DMReq = TypeVar("_DMReq", bound="_DataBagModel[Any, Any]")
+_DMProv = TypeVar("_DMProv", bound="_DataBagModel[Any, Any]")
+_RelationModel = TypeVar("_RelationModel", bound="RelationModel")
 
 
 @dataclass
-class DataBagModel:
+class _DataBagModel(Generic[_A, _B]):
     """Databag model."""
 
-    app: Optional[Type["Model"]] = None
-    unit: Optional[Type["Model"]] = None
+    app: Optional[_A] = None
+    unit: Optional[_B] = None
 
     def to_dict(self) -> dict:
         """Convert to dict."""
 
-        def _to_dict(cls: Optional[Type]):
+        def _to_dict(cls: Optional[Model]):
             if cls is None:
                 return None
             try:
@@ -107,12 +112,27 @@ class DataBagModel:
         return {"app": _to_dict(self.app), "unit": _to_dict(self.unit)}
 
 
+# fmt: off
+@overload
+def DataBagModel(*, app: _A, unit: _B) -> _DataBagModel[_A, _B]: ...
+@overload
+def DataBagModel(*, app: _A) -> _DataBagModel[_A, None]: ...
+@overload
+def DataBagModel(*, unit: _B) -> _DataBagModel[None, _B]: ...
+# fmt: on
+
+
+def DataBagModel(*, app: Optional["Model"] = None, unit: Optional["Model"] = None):
+    """Databag model."""
+    return _DataBagModel(app, unit)
+
+
 @dataclass
-class _Template:
+class _Template(Generic[_DMProv, _DMReq]):
     """Data template for requirer and provider sides of an integration."""
 
-    requirer: Optional[DataBagModel] = None
-    provider: Optional[DataBagModel] = None
+    provider: Optional[_DMProv] = None
+    requirer: Optional[_DMReq] = None
 
     def as_requirer_model(self) -> "RelationModel":
         """Get the template as seen from the requirer side."""
@@ -140,14 +160,35 @@ class _Template:
         }
 
 
+# fmt: off
+@overload
+def Template(*, provider: _DMProv, requirer: _DMReq) -> _Template[_DMProv, _DMReq]: ...
+@overload
+def Template(*, provider: _DMProv) -> _Template[_DMProv, _DataBagModel[None, None]]: ...
+@overload
+def Template(*, requirer: _DMReq) -> _Template[_DataBagModel[None, None], _DMReq]: ...
+@overload
+def Template() -> _Template[_DataBagModel[None, None], _DataBagModel[None, None]]: ...
+# fmt: on
+
+
+def Template(  # noqa: N802
+    *,
+    provider: Optional[_DMProv] = None,
+    requirer: Optional[_DMReq] = None,
+) -> _Template[_DMProv, _DMReq]:
+    """Data template for requirer and provider sides of a relation."""  # noqa: D401
+    return _Template(provider=provider, requirer=requirer)
+
+
 @dataclass
-class RelationModel:
+class RelationModel(Generic[_A, _B, _C, _D]):
     """Model of a relation as seen from either side of it."""
 
-    local_app_data_model: Optional[Type["Model"]] = None
-    remote_app_data_model: Optional[Type["Model"]] = None
-    local_unit_data_model: Optional[Type["Model"]] = None
-    remote_unit_data_model: Optional[Type["Model"]] = None
+    local_app_data_model: Optional[_A] = None
+    remote_app_data_model: Optional[_B] = None
+    local_unit_data_model: Optional[_C] = None
+    remote_unit_data_model: Optional[_D] = None
 
     @staticmethod
     def from_charm(
@@ -161,7 +202,7 @@ class RelationModel:
             return template.as_requirer_model()
         return template.as_provider_model()
 
-    def get(self, name):
+    def get(self, name: str) -> Union[_A, _B, _C, _D]:
         """Get a specific data model by name."""
         return getattr(self, name + "_data_model")
 
@@ -312,6 +353,10 @@ class PydanticValidator:
     Requires pydantic to be installed.
     """
 
+    if typing.TYPE_CHECKING:
+        _BaseModel: Type
+        _PydanticValidationError: Type[BaseException]
+
     _loaded: bool = False
     _model: Any = None
 
@@ -425,17 +470,17 @@ class _RelationBase:
         self._charm = charm
         self._relation_name = relation_name
         self._relation_model = model
-        self._model: OpsModel = charm.model
-        self._local_unit: Unit = charm.unit
-        self._local_app: Application = charm.app
+        self._model: "OpsModel" = charm.model
+        self._local_unit: "Unit" = charm.unit
+        self._local_app: "Application" = charm.app
         self._is_leader: bool = charm.unit.is_leader()
 
     @property
-    def local_unit(self) -> Unit:
+    def local_unit(self) -> "Unit":
         return self._local_unit
 
     @property
-    def local_app(self) -> Application:
+    def local_app(self) -> "Application":
         return self._local_app
 
 
@@ -451,28 +496,31 @@ def _needs_write_permission(method):
 
 
 @dataclass
-class DataWrapperParams:  # noqa: D101
-    relation: OpsRelation
-    data: Any
+class DataWrapperParams(Generic[_T]):  # noqa: D101
+    relation: "OpsRelation"
+    data: "RelationDataContent"
     validator: "_Validator"
     entity: "UnitOrApplication"
-    model: "Model"
+    model: _T
     can_write: bool
 
 
-class DataWrapper(Generic[M], collections.abc.MutableMapping):  # type: ignore
+class DataWrapper(Generic[_T], collections.abc.MutableMapping):  # type: ignore
     """Wrapper for the databag of a specific entity involved in a relation."""
+
+    if typing.TYPE_CHECKING:
+        __datawrapper_params__: DataWrapperParams[_T]
 
     def __init__(
         self,
-        relation: OpsRelation,
+        relation: "OpsRelation",
         entity: "UnitOrApplication",
         model: "Model",
         validator: "_Validator",
         can_write: bool = False,
     ):
 
-        # fixme: dedup issue here; externalize model in Validator.
+        # fixme: potential dedup issue here; externalize model in Validator.
         validator.model = model
         # keep the namespace clean: everything we put here is a name the user can't use
         self.__datawrapper_params__ = DataWrapperParams(
@@ -548,7 +596,7 @@ class DataWrapper(Generic[M], collections.abc.MutableMapping):  # type: ignore
         )
 
 
-class Relation(_RelationBase):
+class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
     """Encapsulates the relation between the local unit and a single remote unit.
 
     Usage:
@@ -563,56 +611,62 @@ class Relation(_RelationBase):
     def __init__(
         self,
         charm: CharmBase,
-        relation: OpsRelation,
+        relation: "OpsRelation",
         model: RelationModel,
         validator: Type = DEFAULT_VALIDATOR,
     ):
         super().__init__(charm=charm, relation_name=relation.name, model=model)
-        self._validator = validator()
+        self._validator_cls = validator
         self._relation = relation
-        self._remote_units: Tuple[Unit] = tuple(relation.units)  # type: ignore
-        self._remote_app: Application = relation.app  # type: ignore
+        self._remote_units: Tuple["Unit"] = tuple(relation.units)  # type: ignore
+        self._remote_app: "Application" = relation.app  # type: ignore
 
-    def wraps(self, relation: OpsRelation) -> bool:
+    def wraps(self, relation: "OpsRelation") -> bool:
         """Check if this Relation wraps the provided ops.Relation object."""
         return relation is self._relation
 
     @property
-    def relation(self) -> OpsRelation:
+    def relation(self) -> "OpsRelation":
         """Get the underlying `ops.Relation` object."""
         return self._relation
 
     @property
-    def remote_units(self) -> Tuple[Unit]:
+    def remote_units(self) -> Tuple["Unit"]:
         """Get the remote units."""
         return self._remote_units
 
     @property
-    def remote_app(self) -> Application:
+    def remote_app(self) -> "Application":
         """Get the remote application object."""
         return self._remote_app
+
+    @staticmethod
+    def _is_valid(data: Union[_A, _B, _C, _D]) -> Optional[bool]:
+        # fixme: we need to ignore type here because mypy thinks data is _A
+        #  while it is DataWrapper[_A]
+        return data.valid  # type: ignore
 
     @property
     def remote_units_data_valid(self) -> Optional[bool]:
         """Whether the `remote_units` side of this relation is valid."""
         return get_worst_case(
-            (ru_data.valid for ru_data in self.remote_units_data.values())
+            (self._is_valid(ru_data) for ru_data in self.remote_units_data.values())
         )
 
     @property
     def remote_app_data_valid(self) -> Optional[bool]:
         """Whether the `remote_app` side of this relation is valid."""
-        return self.remote_app_data.valid
+        return self._is_valid(self.remote_app_data)
 
     @property
     def local_unit_data_valid(self) -> Optional[bool]:
         """Whether the `local_unit` side of this relation is valid."""
-        return self.local_unit_data.valid
+        return self._is_valid(self.local_unit_data)
 
     @property
     def local_app_data_valid(self) -> Optional[bool]:
         """Whether the `local_app` side of this relation is valid."""
-        return self.local_app_data.valid
+        return self._is_valid(self.local_app_data)
 
     @property
     def local_valid(self) -> Optional[bool]:
@@ -638,27 +692,32 @@ class Relation(_RelationBase):
             relation=self._relation,
             entity=entity,
             model=self._relation_model.get(model_name),
-            validator=self._validator,
+            validator=self._validator_cls(),
             can_write=can_write,
         )
 
+    # FIXME: we don't have Proxy[T] yet, so we can't correctly type DataWrapper.
+    #  therefore we pretend the return type is T.
+    #  cfr: https://github.com/python/mypy/issues/5523
     @property
-    def local_app_data(self) -> DataWrapper[Any]:
+    def local_app_data(self) -> _A:  # real type: DataWrapper[_A]
         """Get the data from the `local_app` side of the relation."""
         return self._wrap_data(self._local_app, "local_app", can_write=self._is_leader)
 
     @property
-    def remote_app_data(self) -> DataWrapper[Any]:
-        """Get the data from the `remote_app` side of the relation."""
-        return self._wrap_data(self._remote_app, "remote_app")
-
-    @property
-    def local_unit_data(self) -> DataWrapper[Any]:
+    def local_unit_data(self) -> _B:  # real type: DataWrapper[_B]
         """Get the data from the `local_unit` side of the relation."""
         return self._wrap_data(self._local_unit, "local_unit", can_write=True)
 
     @property
-    def remote_units_data(self) -> Mapping[Unit, DataWrapper[Any]]:
+    def remote_app_data(self) -> _C:  # real type: DataWrapper[_C]
+        """Get the data from the `remote_app` side of the relation."""
+        return self._wrap_data(self._remote_app, "remote_app")
+
+    @property
+    def remote_units_data(
+        self,
+    ) -> Mapping["Unit", _D]:  # real type: Mapping["Unit", DataWrapper[_D]]
         """Get the data from the `remote_units` side of the relation."""
         return {
             remote_unit: self._wrap_data(remote_unit, "remote_unit")
@@ -677,31 +736,8 @@ def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
     return out
 
 
-class _EndpointWrapper(_RelationBase, Object):
-    """Encapsulates the relation between the local application and a remote one.
-    Usage:
-
-    >>> # make a dataclass, or inherit from pydantic.BaseModel
-    >>> class MyDataModel:
-    >>>     foo: int
-    >>>     bar: str
-    >>>     baz: SomeOtherModel  # noqa
-    >>> class MyCharm(CharmBase):
-    >>>     def __init__(self, *args):
-    >>>         super().__init__(*args)
-    >>>         self._ingress_relations = EndpointWrapper(
-    ...             self, 'ingress',
-    ...             local_app_data_model=MyDataModel,
-    ...             on_joined=self._on_ingress_joined,
-    ...         )
-    >>>     def _on_ingress_joined(self, event, relation:Relation):
-    >>>         if relation.remote_valid:
-    >>>             # remote apps in the clear!
-    >>>             self.do_stuff()  # noqa
-    >>>         if relation.valid:
-    >>>             # all clear!
-    >>>             self.do_stuff()  # noqa
-    """
+class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
+    """_EndpointWrapper for a group of relations sharing an endpoint."""
 
     def __init__(
         self,
@@ -752,17 +788,17 @@ class _EndpointWrapper(_RelationBase, Object):
             self._publish_defaults(relation.local_app_data)
         self._publish_defaults(relation.local_unit_data)
 
-    def wrap(self, relation: OpsRelation) -> Relation:
+    def wrap(self, relation: "OpsRelation") -> Relation[_A, _B, _C, _D]:
         """Get the Relation wrapper object from an ops Relation object."""
         return next(filter(lambda r: r.wraps(relation), self.relations))
 
     @property
-    def _relations(self) -> Tuple[OpsRelation, ...]:
+    def _relations(self) -> Tuple["OpsRelation", ...]:
         relations = self._model.relations.get(self._relation_name)
         return tuple(relations) if relations else ()
 
     @property
-    def relations(self) -> Tuple[Relation, ...]:
+    def relations(self) -> Tuple[Relation[_A, _B, _C, _D], ...]:
         """All relations currently alive on this charm."""
         return tuple(
             Relation(
@@ -814,38 +850,49 @@ class _EndpointWrapper(_RelationBase, Object):
         return get_worst_case(map(lambda r: r.valid, self.relations))
 
     @property
-    def local_apps_data(self) -> Dict[Application, DataWrapper[Any]]:
+    def local_apps_data(
+        self,
+    ) -> Dict["Application", _A]:  # real type: Dict["Application", DataWrapper[_A]]
         """Map remote apps to the `local_app` side of the relation."""
         if not self.relations:
             return {}
         return {r.remote_app: r.local_app_data for r in self.relations}
 
     @property
-    def remote_apps_data(self) -> Dict[Application, DataWrapper[Any]]:
-        """Get the data from the `remote_apps` side of the relation."""
-        return {r.remote_app: r.remote_app_data for r in self.relations}
-
-    @property
-    def local_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
+    def local_units_data(
+        self,
+    ) -> Dict["Unit", _B]:  # real type: Dict["Unit", DataWrapper[_B]]
         """Map remote apps to the `local_unit` side of the relation."""
         if not self.relations:
             return {}
         return {r.local_unit: r.local_unit_data for r in self.relations}
 
     @property
-    def remote_units_data(self) -> Dict[Unit, DataWrapper[Any]]:
+    def remote_apps_data(
+        self,
+    ) -> Dict["Application", _C]:  # real type: Dict["Application", DataWrapper[_C]]
+        """Get the data from the `remote_apps` side of the relation."""
+        return {r.remote_app: r.remote_app_data for r in self.relations}
+
+    @property
+    def remote_units_data(
+        self,
+    ) -> Dict["Unit", _D]:  # real type: Dict["Unit", DataWrapper[_D]]
         """Get the data from the `remote_units` side of the relation."""
-        data: Dict[Unit, DataWrapper[Any]] = {}
+        data: Dict["Unit", _D] = {}
         for r in self.relations:
             data.update(r.remote_units_data)
         return data
 
     @staticmethod
-    def _publish_defaults(data: DataWrapper[Any]):
+    def _publish_defaults(
+        data: Union[_A, _B, _C, _D]
+    ):  # real type: DataWrapper[Union[_A, _B, _C, _D]]
         """Write the databags with the template defaults."""
-        if isinstance(data, dict):
+        if isinstance(data, dict):  # fixme: hacky
             return
 
+        data = typing.cast(DataWrapper, data)
         assert data.__datawrapper_params__.can_write
         if model := data.__datawrapper_params__.model:
             defaults = get_defaults(model)
@@ -853,7 +900,7 @@ class _EndpointWrapper(_RelationBase, Object):
                 data[key] = value
 
 
-def get_defaults(model):
+def get_defaults(model: Any) -> Dict[str, Any]:
     """Get all defaulted fields from the model."""
     # TODO Handle recursive models.
     if is_dataclass(model):
@@ -862,7 +909,7 @@ def get_defaults(model):
         return _get_pydantic_defaults(model)
 
 
-def _get_dataclass_defaults(model):
+def _get_dataclass_defaults(model: Any) -> Dict[str, Any]:
     return {
         field.name: field.default
         for field in model.__dataclass_fields__.values()
@@ -870,7 +917,7 @@ def _get_dataclass_defaults(model):
     }
 
 
-def _get_pydantic_defaults(model):
+def _get_pydantic_defaults(model: Any) -> Dict[str, Any]:
     return {
         field.name: field.default
         for field in model.__fields__.values()
@@ -878,333 +925,41 @@ def _get_pydantic_defaults(model):
     }
 
 
-def EndpointWrapper(*args, **kwargs):  # noqa: D103 N802
-    return _EndpointWrapper(*args, **kwargs)
-
-
-def Template(  # noqa: D103 N802
-    requirer: Optional[DataBagModel] = None,
-    provider: Optional[DataBagModel] = None,
-):
-    return _Template(requirer=requirer, provider=provider)
-
-
-
-if __name__ == "__main__":
-    def _drop_types():
-        print("dropping lib stub file...")
-        from pathlib import Path
-        location = Path(__file__)
-        pyi_file = location.parent / 'endpoint_wrapper.pyi'
-        import textwrap
-        pyi = textwrap.dedent("""from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Literal,
-    Mapping,
-    Optional,
-    Protocol,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    overload,
-)
-
-from ops.charm import CharmBase
-from ops.model import Application
-from ops.model import Relation as OpsRelation
-from ops.model import Unit
-
-Role = Literal["requirer", "provider"]
-
-_A = TypeVar("_A")
-_B = TypeVar("_B")
-_C = TypeVar("_C")
-_D = TypeVar("_D")
-
-class _DataBagModel(Generic[_A, _B]):
-    app: Optional[_A]
-    unit: Optional[_B]
-    def to_dict(self) -> dict: ...
-    def __init__(self, app, unit) -> None: ...
-
-_DMReq = TypeVar("_DMReq", bound=_DataBagModel)
-_DMProv = TypeVar("_DMProv", bound=_DataBagModel)
-
+# fmt: off
 @overload
-def DataBagModel(app: _A, unit: _B) -> _DataBagModel[_A, _B]: ...
-@overload
-def DataBagModel(app: _A) -> _DataBagModel[_A, None]: ...
-@overload
-def DataBagModel(unit: _B) -> _DataBagModel[None, _B]: ...
-
-class RelationModel(Generic[_A, _B, _C, _D]):
-    local_app_data_model: _A
-    remote_app_data_model: _B
-    local_unit_data_model: _C
-    remote_unit_data_model: _D
-    @staticmethod
-    def from_charm(
-        charm: CharmBase, relation_name: str, template: "_Template" = ...
-    ) -> "RelationModel": ...
-    def get(self, name): ...
-    def __init__(
-        self,
-        local_app_data_model,
-        remote_app_data_model,
-        local_unit_data_model,
-        remote_unit_data_model,
-    ) -> None: ...
-
-class _Template(Generic[_DMProv, _DMReq]):
-    provider: Optional[_DMProv]
-    requirer: Optional[_DMReq]
-    def as_requirer_model(
-        self,
-    ) -> RelationModel: ...  # unimportant to define _A, _B, _C, _D here...
-    def as_provider_model(
-        self,
-    ) -> RelationModel: ...  # unimportant to define _A, _B, _C, _D here...
-    def to_dict(self) -> dict: ...
-    def __init__(self, requirer, provider) -> None: ...
-
-_RelationModel = TypeVar("_RelationModel", bound=RelationModel)
-
-class ValidationError(RuntimeError): ...
-class CoercionError(ValidationError): ...
-class InvalidFieldNameError(ValidationError): ...
-class CannotWriteError(RuntimeError): ...
-
-class _Validator(Protocol):
-    _parse_obj_as: Callable[[Type, Any], str]
-    _parse_raw_as: Callable[[Type, str], Any]
-    _model: Any
-    model: Any
-    def validate(self, data: dict, _raise: bool = ...): ...
-    def check_field(self, name): ...
-    def coerce(self, key, value): ...
-    def serialize(self, key, value) -> str: ...
-    def deserialize(self, obj: str, value: str) -> Any: ...
-
-class DataclassValidator(_Validator):
-    _parse_obj_as: Callable[[Type, Any], str]
-    _parse_raw_as: Callable[[Type, str], Any]
-    _model: Any
-    model: Any
-
-class PydanticValidator(_Validator):
-    _parse_obj_as: Callable[[Type, Any], str]
-    _parse_raw_as: Callable[[Type, str], Any]
-    _model: Any
-    model: Any
-    _BaseModel: Type
-    _PydanticValidationError: Type[BaseException]
-
-DEFAULT_VALIDATOR: Union[Type[PydanticValidator], Type[DataclassValidator]]
-
-UnitOrApplication = Union[Unit, Application]
-T = TypeVar("T")
-
-class DataWrapperParams(Generic[T]):
-    relation: OpsRelation
-    data: Any
-    validator: "_Validator"
-    entity: "UnitOrApplication"
-    model: T
-    can_write: bool
-
-class DataWrapper(Generic[T]):
-    __datawrapper_params__: DataWrapperParams[T]
-
-    def __init__(
-        self,
-        relation: OpsRelation,
-        entity: UnitOrApplication,
-        model: Any,
-        validator: _Validator,
-        can_write: bool = ...,
-    ) -> None: ...
-    def validate(self) -> None: ...
-    def __setitem__(self, key, value): ...
-    def __getitem__(self, item): ...
-    def __delitem__(self, key): ...
-    def __iter__(self): ...
-    def __len__(self): ...
-    def __eq__(self, other) -> bool: ...
-    def __bool__(self) -> bool: ...
-
-ModelName = Literal["local_app", "remote_app", "local_unit", "remote_unit"]
-
-class Relation(Generic[_A, _B, _C, _D]):
-    _relation: OpsRelation
-    _remote_units: Tuple[Unit]
-    _remote_app: Application
-    _relation_model: Optional[RelationModel]
-    _validator: Optional[_Validator]
-    _is_leader: bool
-    _local_app: Application
-    _local_unit: Unit
-
-    def __init__(
-        self,
-        charm: CharmBase,
-        relation: OpsRelation,
-        model: RelationModel,
-        validator: Type["_Validator"] = ...,
-    ) -> None: ...
-    def _wrap_data(
-        self, entity: UnitOrApplication, model_name: ModelName, can_write=False
-    ) -> DataWrapper: ...
-    def wraps(self, relation: OpsRelation) -> bool: ...
-    @property
-    def relation(self) -> OpsRelation: ...
-    @property
-    def remote_units(self) -> Tuple[Unit]: ...
-    @property
-    def remote_app(self) -> Application: ...
-    @property
-    def remote_units_data_valid(self) -> Optional[bool]: ...
-    @property
-    def remote_app_data_valid(self) -> Optional[bool]: ...
-    @property
-    def local_unit_data_valid(self) -> Optional[bool]: ...
-    @property
-    def local_app_data_valid(self) -> Optional[bool]: ...
-    @property
-    def local_valid(self) -> Optional[bool]: ...
-    @property
-    def remote_valid(self) -> Optional[bool]: ...
-    @property
-    def valid(self) -> Optional[bool]: ...
-    @property
-    def local_app_data(self) -> _A: ...
-    # FIXME: we don't have Proxy[T] yet, so we can't correctly type DataWrapper.
-    @property
-    def local_unit_data(self) -> _B: ...
-    @property
-    def remote_app_data(self) -> _C: ...
-    @property
-    def remote_units_data(self) -> Mapping[Unit, _D]: ...
-
-def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]: ...
-
-class _EndpointWrapper(Generic[_A, _B, _C, _D]):
-    local_app: Application
-    local_unit: Unit
-
-    def __init__(
-        self,
-        charm: CharmBase,
-        relation_name: str,
-        template: _Template = ...,
-        role: Role = ...,
-        validator: Type["_Validator"] = ...,
-        **kwargs
-    ) -> None: ...
-    def publish_defaults(self, event) -> None: ...
-    def wrap(self, relation: OpsRelation) -> Relation[_A, _B, _C, _D]: ...
-    @property
-    def relations(self) -> Tuple[Relation[_A, _B, _C, _D], ...]: ...
-    @property
-    def remote_units_data_valid(self): ...
-    @property
-    def remote_apps_data_valid(self): ...
-    @property
-    def local_unit_data_valid(self): ...
-    @property
-    def local_app_data_valid(self): ...
-    @property
-    def remote_valid(self): ...
-    @property
-    def local_valid(self): ...
-    @property
-    def valid(self): ...
-    @property
-    def local_apps_data(
-        self,
-    ) -> Dict[Application, _A]: ...
-    # FIXME: we don't have Proxy[T] yet, so we can't correctly type DataWrapper.
-    @property
-    def local_units_data(
-        self,
-    ) -> Dict[Unit, _B]: ...
-    @property
-    def remote_apps_data(
-        self,
-    ) -> Dict[Application, _C]: ...
-    @property
-    def remote_units_data(
-        self,
-    ) -> Dict[Unit, _D]: ...
-
-# template and requirer role
-@overload
-def EndpointWrapper(
-    charm: CharmBase,
-    relation_name: str,
-    template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]],
-    role: Literal["requirer"] = None,
-    validator: Optional[Type[_Validator]] = None,
-    on_joined: Optional[Callable] = None,
-    on_changed: Optional[Callable] = None,
-    on_broken: Optional[Callable] = None,
-    on_departed: Optional[Callable] = None,
-    on_created: Optional[Callable] = None,
-) -> _EndpointWrapper[_C, _D, _A, _B]: ...
-
+def EndpointWrapper(charm: CharmBase, relation_name: str, template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], role: Literal["requirer"], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_C, _D, _A, _B]: ...
 # template and provider role
 @overload
-def EndpointWrapper(
-    charm: CharmBase,
-    relation_name: str,
-    template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]],
-    role: Literal["provider"] = None,
-    validator: Optional[Type[_Validator]] = None,
-    on_joined: Optional[Callable] = None,
-    on_changed: Optional[Callable] = None,
-    on_broken: Optional[Callable] = None,
-    on_departed: Optional[Callable] = None,
-    on_created: Optional[Callable] = None,
-) -> _EndpointWrapper[_A, _B, _C, _D]: ...
-
+def EndpointWrapper(charm: CharmBase, relation_name: str, template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], role: Literal["provider"], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_A, _B, _C, _D]: ...
 # no template, no role
 @overload
-def EndpointWrapper(
-    charm: CharmBase,
-    relation_name: str,
-    template: None = None,
-    role: None = None,
-    validator: Optional[Type[_Validator]] = None,
-    on_joined: Optional[Callable] = None,
-    on_changed: Optional[Callable] = None,
-    on_broken: Optional[Callable] = None,
-    on_departed: Optional[Callable] = None,
-    on_created: Optional[Callable] = None,
-) -> _EndpointWrapper: ...
-@overload
-def Template(
-    provider: _DMProv,
-    requirer: _DMReq,
-) -> _Template[_DMProv, _DMReq]: ...
-@overload
-def Template(
-    provider: _DMProv,
-) -> _Template[_DMProv, _DataBagModel[None, None]]: ...
-@overload
-def Template(
-    requirer: _DMReq,
-) -> _Template[_DataBagModel[None, None], _DMReq]: ...
-@overload
-def Template() -> _Template[_DataBagModel[None, None], _DataBagModel[None, None]]: ...
-def _get_dataclass_defaults(model: Any) -> Dict[str, Any]: ...
-def _get_pydantic_defaults(model: Any) -> Dict[str, Any]: ...
-""")
-        pyi_file.write_text(pyi)
-        print(f"dropped {pyi_file}.")
+def EndpointWrapper(charm: CharmBase, relation_name: str, template: None = None, role: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper: ...
+# fmt: on
 
-    _drop_types()
+
+def EndpointWrapper(*args, **kwargs):  # noqa: N802
+    """Encapsulates the relation between the local application and a remote one.
+    Usage:
+
+    >>> # make a dataclass, or inherit from pydantic.BaseModel
+    >>> class MyDataModel:
+    >>>     foo: int
+    >>>     bar: str
+    >>>     baz: SomeOtherModel  # noqa
+    >>> class MyCharm(CharmBase):
+    >>>     def __init__(self, *args):
+    >>>         super().__init__(*args)
+    >>>         self._ingress_relations = EndpointWrapper(
+    ...             self, 'ingress',
+    ...             local_app_data_model=MyDataModel,
+    ...             on_joined=self._on_ingress_joined,
+    ...         )
+    >>>     def _on_ingress_joined(self, event, relation:Relation):
+    >>>         if relation.remote_valid:
+    >>>             # remote apps in the clear!
+    >>>             self.do_stuff()  # noqa
+    >>>         if relation.valid:
+    >>>             # all clear!
+    >>>             self.do_stuff()  # noqa
+    """
+    return _EndpointWrapper(*args, **kwargs)
