@@ -1,5 +1,6 @@
+#! /bin/python3
+
 from pathlib import Path
-from textwrap import dedent
 
 import __version__
 

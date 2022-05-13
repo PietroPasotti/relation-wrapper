@@ -117,7 +117,9 @@ def test_write_data_setattr(harness, relation_id, relations):
     harness.set_leader(True)
     assert not harness.get_relation_data(relation_id, LOCAL_APP).get("foo")
     relations.relations[0].local_app_data.foo = 41
-    assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == "41"
+    rel_data = harness.get_relation_data(relation_id, LOCAL_APP)
+    assert rel_data is relations.relations[0].local_app_data.__datawrapper_params__.data
+    assert rel_data["foo"] == "41"
     assert relations.relations[0].local_app_data.foo == 41
 
 
@@ -204,7 +206,9 @@ def test_bad_data_overwrite_good_data(harness, relation_id, relations):
 @pytest.mark.parametrize("leader", ((True, False)))
 def test_local_app_data_write_permissions(harness, relations, leader):
     harness.set_leader(leader)
-    assert relations.relations[0].local_app_data.__datawrapper_params__.can_write == leader
+    assert (
+        relations.relations[0].local_app_data.__datawrapper_params__.can_write == leader
+    )
     # can write local app only if leader
     if leader:
         relations.relations[0].local_app_data["foo"] = 41
@@ -217,7 +221,9 @@ def test_local_app_data_write_permissions(harness, relations, leader):
 def test_local_unit_data_write_permissions(harness, relations, leader):
     # can always write local unit
     harness.set_leader(leader)
-    assert relations.relations[0].local_unit_data.__datawrapper_params__.can_write is True
+    assert (
+        relations.relations[0].local_unit_data.__datawrapper_params__.can_write is True
+    )
     with pytest.raises(InvalidFieldNameError):
         relations.relations[0].local_unit_data["foo"] = "41"
 
@@ -232,3 +238,18 @@ def test_remote_entities_data_write_permissions(harness, relations, leader):
         assert rem_data.__datawrapper_params__.can_write is False
         with pytest.raises(CannotWriteError):
             rem_data["foo"] = "41"
+
+
+def test_validator_dedup(harness, relations, relation_id):
+    harness.set_leader(True)
+    # set it up with valid data
+    mock_good_data(harness, relation_id)
+
+    # we get the local app databag
+    local_app_data = relations.relations[0].local_app_data
+    # we get the local unit databag
+    local_unit_data = relations.relations[0].local_unit_data
+
+    local_app_data["foo"] = 41
+    with pytest.raises(InvalidFieldNameError):
+        local_unit_data["foo"] = 41

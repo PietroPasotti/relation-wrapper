@@ -1,6 +1,8 @@
 # relation-wrapper
 
 Provides high-level API to code relation interfaces with.
+Dependencies:
+- Tested: Python 3.8+
 
 In charm code:
 
