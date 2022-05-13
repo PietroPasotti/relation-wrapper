@@ -44,6 +44,18 @@ class RequirerCharm(CharmBase):
         pass
 
 
+@pytest.fixture(params=[[0], [1]], ids=["getattr", "getitem"])
+def read(request):
+    if request.param:
+        return getattr
+    else:
+
+        def _getitem(obj, key):
+            return obj[key]
+
+        return _getitem
+
+
 @pytest.fixture
 def harness():
     h = Harness(RequirerCharm, meta=RequirerCharm.META)
@@ -209,7 +221,7 @@ def test_invalid_data_read(harness, relation_id, relations):
     assert relations.relations[0].local_unit_data == {}
 
 
-def test_valid_data_read(harness, relation_id, relations):
+def test_valid_data_read(harness, relation_id, relations, read):
     mock_relation_data(
         harness,
         relation_id,
@@ -222,9 +234,13 @@ def test_valid_data_read(harness, relation_id, relations):
     assert relations.relations[0].local_app_data == {"foo": 42}
     assert relations.relations[0].local_unit_data == {}
 
+    assert read(relations.relations[0].local_app_data, "foo") == 42
+
     ops_relation = relations._relations[0]
     remote_app = ops_relation.app
     remote_unit = list(ops_relation.units)[0]
 
     assert relations.remote_apps_data[remote_app] == {}
     assert relations.remote_units_data[remote_unit] == {"bar": 42.42}
+
+    assert read(relations.remote_units_data[remote_unit], "bar") == 42.42
