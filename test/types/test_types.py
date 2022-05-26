@@ -151,11 +151,11 @@ def pyright_check_pydantic_model() -> None:
 
 
 def test_with_pyright():
-    root = Path(os.getcwd())
+    root = Path(os.getcwd()).absolute()
     while root.name != 'relation_wrapper':
         root = root.parent
         if root.name == '':
             raise ValueError('you need to call this function from a '
-                             '(subfolder of) relation_wrapper')
+                             f'(subfolder of) relation_wrapper; not {Path(os.getcwd()).absolute()}')
 
     pyright_test(__file__, root)
