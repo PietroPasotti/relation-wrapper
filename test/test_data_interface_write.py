@@ -9,10 +9,10 @@ from ops.testing import Harness
 from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
-    EndpointWrapper,
+    Endpoint,
     InvalidFieldNameError,
     ValidationError,
-    _EndpointWrapper,
+    _Endpoint,
 )
 
 RELATION_NAME = "foo"
@@ -29,7 +29,7 @@ class RequirerCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = EndpointWrapper(
+        self.foo = Endpoint(
             self,
             "foo",
             requirer_template=bar_template,
@@ -79,7 +79,7 @@ def charm(harness, setup_relation) -> RequirerCharm:
 
 
 @pytest.fixture
-def relations(charm) -> _EndpointWrapper:
+def relations(charm) -> _Endpoint:
     return charm.foo
 
 
@@ -113,8 +113,8 @@ def test_data_write_valid_data(harness, relation_id, relations, write):
     write(relations.relations[0].local_app_data, "foo", 41)
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == "41"
     assert relations.relations[0].local_app_data["foo"] == 41
-    assert relations.local_apps_data_valid
-    assert relations.remote_units_data_valid is None
+    assert relations._local_apps_data_valid
+    assert relations._remote_units_data_valid is None
     assert relations.valid is None
 
     # can't write remote data via relations

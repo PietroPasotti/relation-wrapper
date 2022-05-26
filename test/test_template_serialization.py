@@ -6,7 +6,7 @@ from conftest import mock_relation_data, reinit_charm
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import EndpointWrapper
+from endpoint_wrapper import Endpoint
 
 RELATION_NAME = "foo"
 LOCAL_APP = "local"
@@ -22,7 +22,7 @@ class MyCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = EndpointWrapper(self, "foo")
+        self.foo = Endpoint(self, "foo")
 
 
 @pytest.fixture

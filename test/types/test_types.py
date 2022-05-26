@@ -1,11 +1,13 @@
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Type
 
 import pytest
 from ops.charm import CharmBase
 from pyright_test import pyright_test
 
-from endpoint_wrapper import DataBagModel, EndpointWrapper, Template, _EndpointWrapper
+from endpoint_wrapper import DataBagModel, Endpoint, Template, _Endpoint
 
 
 def pyright_check_inversion() -> None:
@@ -29,12 +31,12 @@ def pyright_check_inversion() -> None:
     Prov_DBM = DataBagModel(unit=RUM, app=RAM)
     Req_DBM = DataBagModel(unit=LUM, app=LAM)
     template = Template(provider=Prov_DBM, requirer=Req_DBM)
-    foo: _EndpointWrapper[Type[LAM], Type[LUM], Type[RAM], Type[RUM]] = EndpointWrapper(
-        charm, "relation_name", template, "requirer"
+    foo: _Endpoint[Type[LAM], Type[LUM], Type[RAM], Type[RUM]] = Endpoint(
+        charm, "relation_name", requirer_template=template
     )
-    inverted: _EndpointWrapper[
+    inverted: _Endpoint[
         Type[RAM], Type[RUM], Type[LAM], Type[LUM]
-    ] = EndpointWrapper(charm, "relation_name", template, "provider")
+    ] = Endpoint(charm, "relation_name", provider_template=template)
 
 
 def pyright_check_attr_types() -> None:
@@ -58,10 +60,10 @@ def pyright_check_attr_types() -> None:
     Prov_DBM = DataBagModel(unit=RUM, app=RAM)
     Req_DBM = DataBagModel(unit=LUM, app=LAM)
     template = Template(provider=Prov_DBM, requirer=Req_DBM)
-    foo = EndpointWrapper(charm, "relation_name", template, "requirer")
+    foo = Endpoint(charm, "relation_name", requirer_template=template)
     relation = foo.wrap(charm.model.relations[0])
 
-    valid = relation.remote_app_data_valid
+    valid = relation._remote_app_data_valid
 
     # LOCAL: so requirer
     local_app_data: Type[LAM] = relation.local_app_data
@@ -89,7 +91,7 @@ def pyright_check_partial_template_requirer() -> None:
     template = Template(provider=DataBagModel(unit=RUM))
     charm = CharmBase(None)  # type: ignore
 
-    foo_req = EndpointWrapper(charm, "relation_name", template, "requirer")
+    foo_req = Endpoint(charm, "relation_name", requirer_template=template)
     req_relation = foo_req.wrap(charm.model.relations[0])
     req_remote_unit_data = req_relation.remote_units_data[req_relation.remote_units[0]]
     req_value_foo = req_remote_unit_data.foo
@@ -105,7 +107,7 @@ def pyright_check_partial_template_provider() -> None:
     template = Template(provider=DataBagModel(unit=RUM))
     charm = CharmBase(None)  # type: ignore
 
-    foo_prov = EndpointWrapper(charm, "relation_name", provider_template=template)
+    foo_prov = Endpoint(charm, "relation_name", provider_template=template)
     prov_relation = foo_prov.wrap(charm.model.relations[0])
     prov_remote_unit_data = prov_relation.remote_units_data[
         prov_relation.remote_units[0]
@@ -136,13 +138,10 @@ def pyright_check_pydantic_model() -> None:
         ),
         provider=DataBagModel(unit=ProviderUnitModel),
     )
-    foo = EndpointWrapper(
+    foo = Endpoint(
         charm,
         "foo",
-        template=template,
-        # we can omit `role` and it will be guessed from META, but if we do
-        # provide it, we get nice type hints below
-        role="requirer",
+        requirer_template=template,
     )
 
     # We are the requirer, and our template says that the local app data
@@ -152,4 +151,11 @@ def pyright_check_pydantic_model() -> None:
 
 
 def test_with_pyright():
-    pyright_test(__file__)
+    root = Path(os.getcwd())
+    while root.name != 'relation_wrapper':
+        root = root.parent
+        if root.name == '':
+            raise ValueError('you need to call this function from a '
+                             '(subfolder of) relation_wrapper')
+
+    pyright_test(__file__, root)

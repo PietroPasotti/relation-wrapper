@@ -18,7 +18,7 @@ from ops.testing import Harness
 from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
-    EndpointWrapper,
+    Endpoint,
     InvalidFieldNameError,
     ValidationError,
 )
@@ -37,7 +37,7 @@ class RequirerCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = EndpointWrapper(self, "foo")
+        self.foo = Endpoint(self, "foo")
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def charm(harness, setup_relation) -> RequirerCharm:
 
 
 @pytest.fixture
-def relations(charm) -> EndpointWrapper:
+def relations(charm) -> Endpoint:
     return charm.foo
 
 

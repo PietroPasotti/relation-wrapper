@@ -21,12 +21,12 @@ class PyrightTestError(RuntimeError):
         self.failures = failures
 
 
-def _pyright_test(path):
+def _pyright_test(path, cwd):
     # warning: for this to work properly, the cwd should be the project root.
-    # if there are unexpected errors, this might be the reason
+    # if there are unexpected false positive/negatives, this might be the reason
 
     file = Path(path)
-    proc = Popen(["pyright", str(file)], stdout=PIPE, env=os.environ)
+    proc = Popen(["pyright", str(file)], stdout=PIPE, env=os.environ, cwd=cwd)
     proc.wait()
     out = proc.stdout.read().decode("utf-8")  # type: ignore
     source_lines = file.read_text().split("\n")
@@ -96,6 +96,6 @@ def _raise_if_any(failures: List[Tuple[int, str]]):
         raise PyrightTestError(failures)
 
 
-def pyright_test(path):
+def pyright_test(path, cwd):
     # todo prettify test output, the stack trace is ugly
-    _pyright_test(path)
+    _pyright_test(path, cwd)

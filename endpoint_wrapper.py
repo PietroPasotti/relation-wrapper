@@ -23,7 +23,7 @@ from typing import (
 )
 
 from ops.charm import CharmBase, RelationEvent
-from ops.framework import Object, EventBase
+from ops.framework import Object
 
 if typing.TYPE_CHECKING:
     from typing import Protocol
@@ -196,7 +196,11 @@ class RelationModel(Generic[_A, _B, _C, _D]):
         return getattr(self, name + "_data_model")
 
 
-class ValidationError(RuntimeError):
+class EndpointError(RuntimeError):
+    """Base class for errors raised from this library."""
+
+
+class ValidationError(EndpointError):
     """Error validating the data."""
 
 
@@ -208,8 +212,12 @@ class InvalidFieldNameError(ValidationError):
     """The specified field is not declared in the model."""
 
 
-class CannotWriteError(RuntimeError):
+class CannotWriteError(EndpointError):
     """Insufficient permissions to write to the databag."""
+
+
+class UnboundEndpointError(EndpointError):
+    """Raised when an unbound endpoint is asked to access the current relation."""
 
 
 def _loads(method):
@@ -600,10 +608,10 @@ class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
     Usage:
     >>> class MyCharm(CharmBase):
     >>>     def on_event(self, event):
-    >>>         relation = EndpointWrapper(self, "relation").wrap(event.relation)
+    >>>         relation = Endpoint(self, "relation").wrap(event.relation)
     >>>         foo = relation.remote_app_data['foo']
     >>>         relation.local_app_data['bar'] = foo + 1
-    >>>         assert relation.local_app_data_valid
+    >>>         assert relation._local_app_data_valid
     """
 
     def __init__(
@@ -645,14 +653,14 @@ class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
         return databag_valid(data)  # type: ignore
 
     @property
-    def remote_units_data_valid(self) -> Optional[bool]:
+    def _remote_units_data_valid(self) -> Optional[bool]:
         """Whether the `remote_units` side of this relation is valid."""
         return get_worst_case(
             (self._is_valid(ru_data) for ru_data in self.remote_units_data.values())
         )
 
     @property
-    def remote_app_data_valid(self) -> Optional[bool]:
+    def _remote_app_data_valid(self) -> Optional[bool]:
         """Whether the `remote_app` side of this relation is valid."""
         return self._is_valid(self.remote_app_data)
 
@@ -662,20 +670,20 @@ class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
         return self._is_valid(self.local_unit_data)
 
     @property
-    def local_app_data_valid(self) -> Optional[bool]:
+    def _local_app_data_valid(self) -> Optional[bool]:
         """Whether the `local_app` side of this relation is valid."""
         return self._is_valid(self.local_app_data)
 
     @property
     def local_valid(self) -> Optional[bool]:
         """Whether the `local` side of this relation is valid."""
-        return get_worst_case((self.local_app_data_valid, self.local_unit_data_valid))
+        return get_worst_case((self._local_app_data_valid, self.local_unit_data_valid))
 
     @property
     def remote_valid(self) -> Optional[bool]:
         """Whether the `remote` side of this relation is valid."""
         return get_worst_case(
-            (self.remote_app_data_valid, self.remote_units_data_valid)
+            (self._remote_app_data_valid, self._remote_units_data_valid)
         )
 
     @property
@@ -734,8 +742,8 @@ def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
     return out
 
 
-class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
-    """_EndpointWrapper for a group of relations sharing an endpoint."""
+class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
+    """_Endpoint for a group of relations sharing an endpoint."""
 
     _wrapped_event = None
 
@@ -751,7 +759,7 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
     ):
         """Initialize."""
         if provider_template and requirer_template:
-            raise TypeError('provide at most one of [provider|requirer]_template')
+            raise TypeError("provide at most one of [provider|requirer]_template")
 
         template = provider_template or requirer_template
 
@@ -785,7 +793,10 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         event_name: str = event.handle.kind
         for event_type in self._event_handlers:
             if event_name.endswith(event_type):
-                self._event_handlers[event_type](event)
+                handler = self._event_handlers.get(event_type)
+                if not handler:
+                    raise ValueError(f"handler not found for {event_type}")
+                handler(event)
                 break
         self._wrapped_event = None
 
@@ -797,7 +808,7 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             >>> class MyCharm(CharmBase):
             >>>     def __init__(self, *args):
             >>>         super().__init__(*args)
-            >>>         self._foo = EndpointWrapper(
+            >>>         self._foo = Endpoint(
             ...             self, 'foo', on_joined=self._on_foo_joined
             ...         )
             >>>     def _on_foo_joined(self, event):
@@ -807,9 +818,9 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
 
         """
         if not self._wrapped_event:
-            raise RuntimeError(
-                'unbound endpoint: you can access this attribute '
-                'only within the context of a wrapped event'
+            raise UnboundEndpointError(
+                "unbound endpoint: you can access this attribute "
+                "only within the context of a wrapped event"
             )
         return self.wrap(self._wrapped_event.relation)
 
@@ -850,28 +861,28 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         yield from self.relations
 
     @property
-    def remote_units_data_valid(self):
+    def _remote_units_data_valid(self):
         """Whether the `remote_units` side of this relation is valid."""
-        return get_worst_case(r.remote_units_data_valid for r in self.relations)
+        return get_worst_case(r._remote_units_data_valid for r in self.relations)
 
     @property
-    def remote_apps_data_valid(self):
+    def _remote_apps_data_valid(self):
         """Whether the `remote_apps` side of this relation is valid."""
-        return get_worst_case(r.remote_app_data_valid for r in self.relations)
+        return get_worst_case(r._remote_app_data_valid for r in self.relations)
 
     @property
-    def local_units_data_valid(self):
+    def _local_units_data_valid(self):
         """Whether the `local_unit` side of this relation is valid."""
         if not self.relations:
             return True
         return get_worst_case(map(lambda r: r.local_unit_data_valid, self.relations))
 
     @property
-    def local_apps_data_valid(self):
+    def _local_apps_data_valid(self):
         """Whether the `local_app` side of this relation is valid."""
         if not self.relations:
             return True
-        return get_worst_case(map(lambda r: r.local_app_data_valid, self.relations))
+        return get_worst_case(map(lambda r: r._local_app_data_valid, self.relations))
 
     @property
     def remote_valid(self):
@@ -966,17 +977,17 @@ def _get_pydantic_defaults(model: Any) -> Dict[str, Any]:
 
 # fmt: off
 @overload
-def EndpointWrapper(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_C, _D, _A, _B]: ...
+def Endpoint(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint[_C, _D, _A, _B]: ...
 # template and provider role
 @overload
-def EndpointWrapper(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_A, _B, _C, _D]: ...
+def Endpoint(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint[_A, _B, _C, _D]: ...
 # no template, no role
 @overload
-def EndpointWrapper(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper: ...
+def Endpoint(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint: ...
 # fmt: on
 
 
-def EndpointWrapper(*args, **kwargs):  # noqa: N802
+def Endpoint(*args, **kwargs):  # noqa: N802
     """Encapsulates the relation between the local application and a remote one.
     Usage:
 
@@ -991,7 +1002,7 @@ def EndpointWrapper(*args, **kwargs):  # noqa: N802
     >>> class MyCharm(CharmBase):
     >>>     def __init__(self, *args):
     >>>         super().__init__(*args)
-    >>>         self._ingress = EndpointWrapper(
+    >>>         self._ingress = Endpoint(
     ...             self, 'ingress',
     ...             provider_template=template,
     ...             on_joined=self._on_ingress_joined,
@@ -1005,4 +1016,4 @@ def EndpointWrapper(*args, **kwargs):  # noqa: N802
     >>>             # all clear!
     >>>             self.do_stuff()  # noqa
     """
-    return _EndpointWrapper(*args, **kwargs)
+    return _Endpoint(*args, **kwargs)

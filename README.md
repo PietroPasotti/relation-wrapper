@@ -6,20 +6,20 @@ Provides high-level API to code relation interfaces with.
 
 ## usage
 
-The main idea of EndpointWrapper is to make accessing (and reasoning about) 
+The main idea of Endpoint is to make accessing (and reasoning about) 
 relation data easier. The days of wondering 'is relation.app the provider, or the requirer app?'
 are over.
 
 ```python
 from ops import CharmBase
-from endpoint_wrapper import EndpointWrapper
+from endpoint_wrapper import Endpoint
 
 class MyCharm(CharmBase):
     META = {'requires': {'foo': {'interface': 'bar'}}}
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = EndpointWrapper(
+        self.foo = Endpoint(
             self, 'foo',
             on_changed=self._on_foo_changed,
             on_joined=self._on_foo_joined,
@@ -96,17 +96,17 @@ template = Template(
     )
 )
 
-# Now we can use the template in combination with the EndpointWrapper:
+# Now we can use the template in combination with the Endpoint:
 
 from ops import CharmBase
-from endpoint_wrapper import EndpointWrapper, ValidationError
+from endpoint_wrapper import Endpoint, ValidationError
 
 class MyCharm(CharmBase):
     META = {'requires': {'foo': {'interface': 'bar'}}}
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = EndpointWrapper(
+        self.foo = Endpoint(
             self, 'foo',
             template=template,
             # we can omit `role` and it will be guessed from META, but if we do 
@@ -128,14 +128,14 @@ class MyCharm(CharmBase):
         # mypy will bash you here, because `.foo` is typed as an int, and 2.3 is a float...
         local_app_data.foo = 2.3
 
-        # equivalent to adding an on_joined kwarg to the EndpointWrapper:
+        # equivalent to adding an on_joined kwarg to the Endpoint:
         self.framework.observe('foo-relation-joined', self._on_foo_joined)
         
     def _on_foo_changed(self, event):
         # we can check whether:
         
         # local application data is valid:
-        if self.foo.local_app_data_valid:
+        if self.foo.__local_app_data_valid:
             self.do_stuff() 
             
         # remote data is valid: (for all related apps, for all related units).

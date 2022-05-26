@@ -10,7 +10,7 @@ from endpoint_wrapper import (
     CannotWriteError,
     CoercionError,
     DataBagModel,
-    EndpointWrapper,
+    Endpoint,
     InvalidFieldNameError,
     Template,
     ValidationError,
@@ -86,7 +86,7 @@ def charm(template):
 
         def __init__(self, *args):
             super().__init__(*args)
-            self.foo = EndpointWrapper(self, "foo", provider_template=template)
+            self.foo = Endpoint(self, "foo", provider_template=template)
 
     return MyCharm
 

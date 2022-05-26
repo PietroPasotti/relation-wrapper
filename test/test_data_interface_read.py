@@ -14,7 +14,7 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import EndpointWrapper, _EndpointWrapper
+from endpoint_wrapper import Endpoint, _Endpoint
 
 RELATION_NAME = "foo"
 LOCAL_APP = "local"
@@ -30,7 +30,7 @@ class RequirerCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = EndpointWrapper(
+        self.foo = Endpoint(
             self,
             "foo",
             requirer_template=bar_template,
@@ -89,7 +89,7 @@ def charm(harness, setup_relation) -> RequirerCharm:
 
 
 @pytest.fixture
-def relations(charm) -> _EndpointWrapper:
+def relations(charm) -> _Endpoint:
     return charm.foo
 
 
@@ -113,17 +113,17 @@ def test_data_read_no_data(relations):
 def test_data_validation_no_data(relations):
     # all validations are None
     assert (
-        relations.remote_apps_data_valid is True
+        relations._remote_apps_data_valid is True
     )  # There is no data, and we expect none
     assert (
-        relations.remote_units_data_valid is None
+        relations._remote_units_data_valid is None
     )  # There is no data, and we expect some
     assert relations.remote_valid is None  # worst of previous two
     assert (
-        relations.local_apps_data_valid is None
+        relations._local_apps_data_valid is None
     )  # There is no data, and we expect some
     assert (
-        relations.local_units_data_valid is True
+        relations._local_units_data_valid is True
     )  # There is no data, and we expect none
     assert relations.local_valid is None  # worst of previous two
     assert relations.valid is None  # worst of previous
@@ -139,17 +139,17 @@ def test_data_validation_some_data(harness, relation_id, relations):
     )
 
     assert (
-        relations.remote_apps_data_valid is True
+        relations._remote_apps_data_valid is True
     )  # There is no data, and we expect none
     assert (
-        relations.remote_units_data_valid is True
+        relations._remote_units_data_valid is True
     )  # There is some data and it is valid
     assert relations.remote_valid is True  # worst of previous two
     assert (
-        relations.local_apps_data_valid is None
+        relations._local_apps_data_valid is None
     )  # There is no data, and we expect some
     assert (
-        relations.local_units_data_valid is True
+        relations._local_units_data_valid is True
     )  # There is no data, and we expect none
     assert relations.local_valid is None  # worst of previous two
     assert relations.valid is None  # worst of previous
@@ -165,17 +165,17 @@ def test_data_validation_bad_data(harness, relation_id, relations):
     )
 
     assert (
-        relations.remote_apps_data_valid is True
+        relations._remote_apps_data_valid is True
     )  # There is no data, and we expect none
     assert (
-        relations.remote_units_data_valid is False
+        relations._remote_units_data_valid is False
     )  # There is some data and it is invalid
     assert relations.remote_valid is False  # worst of previous two
     assert (
-        relations.local_apps_data_valid is None
+        relations._local_apps_data_valid is None
     )  # There is no data, and we expect some
     assert (
-        relations.local_units_data_valid is True
+        relations._local_units_data_valid is True
     )  # There is no data, and we expect none
     assert relations.local_valid is None  # worst of previous two
     assert relations.valid is False  # worst of previous
@@ -192,15 +192,15 @@ def test_data_validation_good_data(harness, relation_id, relations):
     )
 
     assert (
-        relations.remote_apps_data_valid is True
+        relations._remote_apps_data_valid is True
     )  # There is no data, and we expect none
     assert (
-        relations.remote_units_data_valid is True
+        relations._remote_units_data_valid is True
     )  # There is some data and it is good
     assert relations.remote_valid is True  # worst of previous two
-    assert relations.local_apps_data_valid is True  # There is some data and it is good
+    assert relations._local_apps_data_valid is True  # There is some data and it is good
     assert (
-        relations.local_units_data_valid is True
+        relations._local_units_data_valid is True
     )  # There is no data, and we expect none
     assert relations.local_valid is True  # worst of previous two
     assert relations.valid is True  # worst of previous

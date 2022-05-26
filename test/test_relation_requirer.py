@@ -11,7 +11,7 @@ from conftest import (
 from ops.charm import CharmBase
 from ops.testing import Harness
 
-from endpoint_wrapper import EndpointWrapper, _EndpointWrapper
+from endpoint_wrapper import Endpoint, _Endpoint
 
 RELATION_NAME = "foo"
 
@@ -23,7 +23,7 @@ class RequirerCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.foo = EndpointWrapper(
+        self.foo = Endpoint(
             self,
             "foo",
             requirer_template=bar_template,
@@ -59,7 +59,7 @@ def requirer_charm(requirer_harness) -> RequirerCharm:
 
 
 @pytest.fixture
-def requirer_relations(requirer_charm) -> _EndpointWrapper:
+def requirer_relations(requirer_charm) -> _Endpoint:
     return requirer_charm.foo
 
 
