@@ -152,7 +152,8 @@ def pyright_check_pydantic_model() -> None:
 
 def test_with_pyright():
     root = Path(os.getcwd()).absolute()
-    while root.name != 'relation_wrapper':
+    # dashed name: in github CI pipelines it seems that _ is converted to -
+    while root.name not in ['relation-wrapper', 'relation_wrapper']:
         root = root.parent
         if root.name == '':
             raise ValueError('you need to call this function from a '
