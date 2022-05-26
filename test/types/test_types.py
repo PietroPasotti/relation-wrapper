@@ -105,7 +105,7 @@ def pyright_check_partial_template_provider() -> None:
     template = Template(provider=DataBagModel(unit=RUM))
     charm = CharmBase(None)  # type: ignore
 
-    foo_prov = EndpointWrapper(charm, "relation_name", template, "provider")
+    foo_prov = EndpointWrapper(charm, "relation_name", provider_template=template)
     prov_relation = foo_prov.wrap(charm.model.relations[0])
     prov_remote_unit_data = prov_relation.remote_units_data[
         prov_relation.remote_units[0]

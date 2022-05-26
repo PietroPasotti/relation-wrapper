@@ -22,8 +22,8 @@ from typing import (
     overload,
 )
 
-from ops.charm import CharmBase
-from ops.framework import Object
+from ops.charm import CharmBase, RelationEvent
+from ops.framework import Object, EventBase
 
 if typing.TYPE_CHECKING:
     from typing import Protocol
@@ -222,6 +222,8 @@ def _loads(method):
     return wrapper
 
 
+# TODO: consider removing the dataclass validation logic and say:
+#  want validation? do pydantic. Otherwise it's a wormhole + reinventing the wheel.
 class DataclassValidator:
     """Validates data based on a dataclass model."""
 
@@ -735,20 +737,23 @@ def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
 class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
     """_EndpointWrapper for a group of relations sharing an endpoint."""
 
+    _wrapped_event = None
+
     def __init__(
         self,
         charm: CharmBase,
         relation_name: str,
-        template: Optional[_Template] = None,
-        role: Optional["Role"] = None,
+        *,
+        provider_template: Optional[_Template] = None,
+        requirer_template: Optional[_Template] = None,
         validator: Type = DEFAULT_VALIDATOR,
         **kwargs,
     ):
         """Initialize."""
-        if template and not role:
-            logger.warning(
-                "provide a `role` for mypy to be able to type " "the databag models."
-            )
+        if provider_template and requirer_template:
+            raise TypeError('provide at most one of [provider|requirer]_template')
+
+        template = provider_template or requirer_template
 
         model = RelationModel.from_charm(charm, relation_name, template)
         _RelationBase.__init__(self, charm, relation_name, model=model)
@@ -756,7 +761,7 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         self._validator = validator
 
         # register all provided event handlers
-        event_handlers = {
+        self._event_handlers = event_handlers = {
             "relation_joined": kwargs.get("on_joined"),
             "relation_changed": kwargs.get("on_changed"),
             "relation_broken": kwargs.get("on_broken"),
@@ -768,11 +773,45 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             if not handler:
                 continue
             event = getattr(charm.on[relation_name], name)
-            charm.framework.observe(event, handler)
+            charm.framework.observe(event, self._wrap_event)
 
         charm.framework.observe(
             charm.on[relation_name].relation_created, self.publish_defaults
         )
+
+    def _wrap_event(self, event: RelationEvent):
+        """Assign event to self._wrapped_event and call the registered handler."""
+        self._wrapped_event = event
+        event_name: str = event.handle.kind
+        for event_type in self._event_handlers:
+            if event_name.endswith(event_type):
+                self._event_handlers[event_type](event)
+                break
+        self._wrapped_event = None
+
+    @property
+    def current(self) -> Relation:
+        """Access the currently wrapped relation.
+
+        Usage:
+            >>> class MyCharm(CharmBase):
+            >>>     def __init__(self, *args):
+            >>>         super().__init__(*args)
+            >>>         self._foo = EndpointWrapper(
+            ...             self, 'foo', on_joined=self._on_foo_joined
+            ...         )
+            >>>     def _on_foo_joined(self, event):
+            >>>         relation: Relation = self._foo.current
+            >>>         # equivalent to:
+            >>>         relation: Relation = self._foo.wrap(event.relation)
+
+        """
+        if not self._wrapped_event:
+            raise RuntimeError(
+                'unbound endpoint: you can access this attribute '
+                'only within the context of a wrapped event'
+            )
+        return self.wrap(self._wrapped_event.relation)
 
     def publish_defaults(self, event):
         """Publish default unit and app data to local databags.
@@ -821,14 +860,14 @@ class _EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         return get_worst_case(r.remote_app_data_valid for r in self.relations)
 
     @property
-    def local_unit_data_valid(self):
+    def local_units_data_valid(self):
         """Whether the `local_unit` side of this relation is valid."""
         if not self.relations:
             return True
         return get_worst_case(map(lambda r: r.local_unit_data_valid, self.relations))
 
     @property
-    def local_app_data_valid(self):
+    def local_apps_data_valid(self):
         """Whether the `local_app` side of this relation is valid."""
         if not self.relations:
             return True
@@ -927,13 +966,13 @@ def _get_pydantic_defaults(model: Any) -> Dict[str, Any]:
 
 # fmt: off
 @overload
-def EndpointWrapper(charm: CharmBase, relation_name: str, template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], role: Literal["requirer"], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_C, _D, _A, _B]: ...
+def EndpointWrapper(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_C, _D, _A, _B]: ...
 # template and provider role
 @overload
-def EndpointWrapper(charm: CharmBase, relation_name: str, template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], role: Literal["provider"], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_A, _B, _C, _D]: ...
+def EndpointWrapper(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper[_A, _B, _C, _D]: ...
 # no template, no role
 @overload
-def EndpointWrapper(charm: CharmBase, relation_name: str, template: None = None, role: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper: ...
+def EndpointWrapper(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _EndpointWrapper: ...
 # fmt: on
 
 
@@ -946,15 +985,19 @@ def EndpointWrapper(*args, **kwargs):  # noqa: N802
     >>>     foo: int
     >>>     bar: str
     >>>     baz: SomeOtherModel  # noqa
+    >>>
+    >>> template = Template(provider=DataBagModel(app=MyDataModel))
+    >>>
     >>> class MyCharm(CharmBase):
     >>>     def __init__(self, *args):
     >>>         super().__init__(*args)
-    >>>         self._ingress_relations = EndpointWrapper(
+    >>>         self._ingress = EndpointWrapper(
     ...             self, 'ingress',
-    ...             local_app_data_model=MyDataModel,
+    ...             provider_template=template,
     ...             on_joined=self._on_ingress_joined,
     ...         )
-    >>>     def _on_ingress_joined(self, event, relation:Relation):
+    >>>     def _on_ingress_joined(self, event):
+    >>>         relation = self._ingress.current
     >>>         if relation.remote_valid:
     >>>             # remote apps in the clear!
     >>>             self.do_stuff()  # noqa

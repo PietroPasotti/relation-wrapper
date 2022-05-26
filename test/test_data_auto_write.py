@@ -86,7 +86,7 @@ def charm(template):
 
         def __init__(self, *args):
             super().__init__(*args)
-            self.foo = EndpointWrapper(self, "foo", template)
+            self.foo = EndpointWrapper(self, "foo", provider_template=template)
 
     return MyCharm
 

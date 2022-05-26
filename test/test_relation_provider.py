@@ -26,7 +26,7 @@ class ProviderCharm(CharmBase):
         self.foo = EndpointWrapper(
             self,
             "foo",
-            bar_template,
+            provider_template=bar_template,
             on_joined=self._handle,
             on_broken=self._handle,
             on_departed=self._handle,

@@ -32,7 +32,7 @@ class RequirerCharm(CharmBase):
         self.foo = EndpointWrapper(
             self,
             "foo",
-            bar_template,
+            requirer_template=bar_template,
             on_joined=self._handle,
             on_broken=self._handle,
             on_departed=self._handle,
@@ -113,7 +113,7 @@ def test_data_write_valid_data(harness, relation_id, relations, write):
     write(relations.relations[0].local_app_data, "foo", 41)
     assert harness.get_relation_data(relation_id, LOCAL_APP)["foo"] == "41"
     assert relations.relations[0].local_app_data["foo"] == 41
-    assert relations.local_app_data_valid
+    assert relations.local_apps_data_valid
     assert relations.remote_units_data_valid is None
     assert relations.valid is None
 
