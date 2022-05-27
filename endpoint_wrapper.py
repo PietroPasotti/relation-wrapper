@@ -665,7 +665,7 @@ class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
         return self._is_valid(self.remote_app_data)
 
     @property
-    def __local_unit_data_valid(self) -> Optional[bool]:
+    def _local_unit_data_valid(self) -> Optional[bool]:
         """Whether the `local_unit` side of this relation is valid."""
         return self._is_valid(self.local_unit_data)
 
