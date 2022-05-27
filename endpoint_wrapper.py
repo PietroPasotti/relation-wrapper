@@ -665,7 +665,7 @@ class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
         return self._is_valid(self.remote_app_data)
 
     @property
-    def local_unit_data_valid(self) -> Optional[bool]:
+    def __local_unit_data_valid(self) -> Optional[bool]:
         """Whether the `local_unit` side of this relation is valid."""
         return self._is_valid(self.local_unit_data)
 
@@ -677,7 +677,7 @@ class Relation(_RelationBase, Generic[_A, _B, _C, _D]):
     @property
     def local_valid(self) -> Optional[bool]:
         """Whether the `local` side of this relation is valid."""
-        return get_worst_case((self._local_app_data_valid, self.local_unit_data_valid))
+        return get_worst_case((self._local_app_data_valid, self._local_unit_data_valid))
 
     @property
     def remote_valid(self) -> Optional[bool]:
@@ -875,7 +875,7 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         """Whether the `local_unit` side of this relation is valid."""
         if not self.relations:
             return True
-        return get_worst_case(map(lambda r: r.local_unit_data_valid, self.relations))
+        return get_worst_case(map(lambda r: r._local_unit_data_valid, self.relations))
 
     @property
     def _local_apps_data_valid(self):
