@@ -53,6 +53,7 @@ if typing.TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ROLE_MISMATCH_WARN = "you declared a {}_template for relation {}, but this charm's metadata says that the role for this relation should be: {}"
 
 _A = TypeVar("_A")
 _B = TypeVar("_B")
@@ -181,14 +182,23 @@ class RelationModel(Generic[_A, _B, _C, _D]):
 
     @staticmethod
     def from_charm(
-        charm: CharmBase, relation_name: str, template: Optional[_Template] = None
+        charm: CharmBase,
+        relation_name: str,
+        template: Optional[_Template] = None,
+        role: str = "unknown",
     ) -> "RelationModel":
         """Guess the model from a charm's meta and a template."""
         if not template:
             # empty template --> empty model
             return RelationModel()
         if relation_name in charm.meta.requires:
+            if role == "provider":
+                logger.warning(
+                    _ROLE_MISMATCH_WARN.format(role, relation_name, "requirer")
+                )
             return template.as_requirer_model()
+        if role == "requirer":
+            logger.warning(_ROLE_MISMATCH_WARN.format(role, relation_name, "provider"))
         return template.as_provider_model()
 
     def get(self, name: str) -> Union[_A, _B, _C, _D]:
@@ -758,12 +768,18 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         **kwargs,
     ):
         """Initialize."""
+        if provider_template:
+            role = "provider"
+        elif requirer_template:
+            role = "requirer"
+        else:
+            role = "unknown"
         if provider_template and requirer_template:
             raise TypeError("provide at most one of [provider|requirer]_template")
 
         template = provider_template or requirer_template
 
-        model = RelationModel.from_charm(charm, relation_name, template)
+        model = RelationModel.from_charm(charm, relation_name, template, role=role)
         _RelationBase.__init__(self, charm, relation_name, model=model)
         Object.__init__(self, charm, relation_name + "_wrapper")
         self._validator = validator
