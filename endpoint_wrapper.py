@@ -576,7 +576,7 @@ class DataWrapper(Generic[_T], collections.abc.MutableMapping):  # type: ignore
         self[key] = value
 
     def __repr__(self):
-        validity = self.valid
+        validity = databag_valid(self)
         valid_str = (
             "valid" if validity else ("invalid" if validity is False else "unfilled")
         )
@@ -836,7 +836,7 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
 
     # todo: wrap events before emitting them forward
     def wrap(self, relation: "OpsRelation") -> Relation[_A, _B, _C, _D]:
-        """Get the Relation wrapper object from an ops Relation object."""
+        """Get the Relation wrapper object from an ops.model.Relation object."""
         return next(filter(lambda r: r.wraps(relation), self.relations))
 
     @property

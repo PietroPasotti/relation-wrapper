@@ -98,8 +98,8 @@ template = Template(
 
 # Now we can use the template in combination with the Endpoint:
 
-from ops import CharmBase
-from endpoint_wrapper import Endpoint, ValidationError
+from ops.charm import CharmBase
+from endpoint_wrapper import Endpoint, ValidationError, databag_valid, validate_databag
 
 class MyCharm(CharmBase):
     META = {'requires': {'foo': {'interface': 'bar'}}}
@@ -108,24 +108,24 @@ class MyCharm(CharmBase):
         super().__init__(*args)
         self.foo = Endpoint(
             self, 'foo',
-            template=template,
-            # we can omit `role` and it will be guessed from META, but if we do 
-            # provide it, we get nice type hints below
-            role='requirer', 
+            requirer_template=template,
             on_changed=self._on_foo_changed
         )
         
         # We are the requirer, and our template says that the local app data 
         # model for the requirer is RequirerAppModel; so we expect 
-        # local_app_data to be a DataWrapper[RequirerAppModel]
+        # local_app_data to have inferred type = RequirerAppModel
         local_app_data = self.foo.relations[0].local_app_data
-        # so this will work although you have to type it manually
+        # getitem notation will still work (for legacy compatibility), 
+        # however you will have to type it manually (with more modern python 
+        # versions you might be able to pass a TypedDict instance and get 
+        # those type annotations too). 
         foo_value: int = local_app_data['foo']
 
         # using dot notation:
         # the IDE will autocomplete `.foo` for you, and mypy will know that foo_value_dot: int 
         foo_value_dot = local_app_data.foo
-        # mypy will bash you here, because `.foo` is typed as an int, and 2.3 is a float...
+        # mypy will smite you here, because `.foo` is typed as an int, and 2.3 is a float...
         local_app_data.foo = 2.3
 
         # equivalent to adding an on_joined kwarg to the Endpoint:
@@ -134,15 +134,19 @@ class MyCharm(CharmBase):
     def _on_foo_changed(self, event):
         # we can check whether:
         
-        # local application data is valid:
-        if self.foo.__local_app_data_valid:
+        # local data (app and unit) is valid:
+        if self.foo.local_valid:
             self.do_stuff() 
             
-        # remote data is valid: (for all related apps, for all related units).
+        # FYI there are methods for checking individual databag validity, but they are private
+        # for now:
+        # if self.foo._local_units_data_valid: ...
+            
+        # remote data (app and unit) is valid: (for all related apps, for all related units).
         if self.foo.remote_valid:
             self.do_stuff()  
             
-        # all data is valid: (all remote and local data).
+        # all data is valid: (all remote and local databags).
         if self.foo.valid:
             self.do_stuff()  
             
@@ -150,20 +154,36 @@ class MyCharm(CharmBase):
         # this charm implements the requirer side of foo, so we have to look at RequirerAppModel.
         
         for local_app_data in self.foo.local_apps_data.values():
-            local_app_data['foo'] = 42
+            local_app_data.foo = 42
             # equivalent to:
             # local_app_data.foo = 42  # mypy will understand this!
             
             # since we installed pydantic:
             try:
-                local_app_data['foo'] = 42.3
+                local_app_data.foo = 42.3
             except ValidationError: 
-              pass
+              print('caught this one!')
+                
+            # also we can
+            assert databag_valid(local_app_data) is True
+            
+            # or
+            try:
+                validate_databag(local_app_data)
+            except ValidationError:
+                print('caught this one too!')
 
     def _on_foo_joined(self, event):
-        # we can 'wrap' an event's relation idiomatically:
-        foo_relation = self.foo.wrap(event.relation)
-        assert foo_relation.remote_app_data.valid
+        # if we are within the context of an event that Endpoint wraps, 
+        # we can grab the Endpoint's `current` relation
+        self.foo.current.local_unit_data.foo = 43
+    
+    def _on_config_changed(self):
+        # in non-relation-event handlers, we cannot use `current` but we can 
+        # 'wrap' an existing ops.model.Relation object idiomatically:
+        foo_relation = self.foo.wrap(self.model.relations['foo'][0])
+        foo_relation.local_unit_data.foo = 42
+        assert databag_valid(foo_relation.remote_app_data)
 ```
 
 # Publishing
