@@ -817,7 +817,7 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         self._wrapped_event = None
 
     @property
-    def current(self) -> Relation:
+    def current(self) -> Relation[_A, _B, _C, _D]:
         """Access the currently wrapped relation.
 
         Usage:
