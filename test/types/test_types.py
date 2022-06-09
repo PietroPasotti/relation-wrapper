@@ -7,7 +7,8 @@ import pytest
 from ops.charm import CharmBase
 from pyright_test import pyright_test
 
-from endpoint_wrapper import DataBagModel, Endpoint, Template, _Endpoint
+from endpoint_wrapper import DataBagModel, Endpoint, Template, _Endpoint, \
+    _SingularEndpoint, SingularEndpoint
 
 
 def pyright_check_inversion() -> None:
@@ -148,6 +149,32 @@ def pyright_check_pydantic_model() -> None:
     # model for the requirer is RequirerAppModel; so we expect
     # local_app_data to be a DataWrapper[RequirerAppModel] so actually:
     data: Type[RequirerAppModel] = foo.relations[0].local_app_data
+
+
+def pyright_check_singular():
+    @dataclass
+    class RUM:
+        foo: float
+
+    @dataclass
+    class RAM:
+        bar: str
+
+    @dataclass
+    class LUM:
+        foo: str
+
+    @dataclass
+    class LAM:
+        foo: int
+
+    charm = CharmBase(None)  # type: ignore
+    Prov_DBM = DataBagModel(unit=RUM, app=RAM)
+    Req_DBM = DataBagModel(unit=LUM, app=LAM)
+    template = Template(provider=Prov_DBM, requirer=Req_DBM)
+    foo = SingularEndpoint(charm, "relation_name", requirer_template=template)
+    assert isinstance(foo, _SingularEndpoint)
+    data = foo.local_unit_data.foo
 
 
 def test_with_pyright():

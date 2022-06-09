@@ -752,11 +752,7 @@ def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
     return out
 
 
-class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
-    """_Endpoint for a group of relations sharing an endpoint."""
-
-    _wrapped_event = None
-
+class EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
     def __init__(
         self,
         charm: CharmBase,
@@ -793,15 +789,161 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             "relation_created": kwargs.get("on_created"),
         }
 
-        for name, handler in event_handlers.items():
-            if not handler:
-                continue
-            event = getattr(charm.on[relation_name], name)
-            charm.framework.observe(event, self._wrap_event)
-
         charm.framework.observe(
             charm.on[relation_name].relation_created, self.publish_defaults
         )
+
+    def publish_defaults(self, event):
+        """Publish default unit and app data to local databags.
+
+        Should be called once a relation is created.
+        """
+        relation = self.wrap(event.relation)
+        if self._charm.unit.is_leader():
+            self._publish_defaults(relation.local_app_data)
+        self._publish_defaults(relation.local_unit_data)
+
+    def wrap(self, relation: "OpsRelation") -> Relation[_A, _B, _C, _D]:
+        """Get the Relation wrapper object from an ops.model.Relation object."""
+        return Relation(
+                charm=self._charm,
+                relation=relation,
+                model=self._relation_model,
+                validator=self._validator,
+            )
+
+    @property
+    def _relations(self) -> Tuple["OpsRelation", ...]:
+        relations = self._model.relations.get(self._relation_name)
+        return tuple(relations) if relations else ()
+
+    @staticmethod
+    def _publish_defaults(
+        data: Union[_A, _B, _C, _D]
+    ):  # real type: DataWrapper[Union[_A, _B, _C, _D]]
+        """Write the databags with the template defaults."""
+        if isinstance(data, dict):  # fixme: hacky
+            return
+
+        data = typing.cast(DataWrapper, data)
+        assert data.__datawrapper_params__.can_write
+        if model := data.__datawrapper_params__.model:
+            defaults = get_defaults(model)
+            for key, value in defaults.items():
+                data[key] = value
+
+
+class _SingularEndpoint(EndpointWrapper[_A, _B, _C, _D]):
+    """Wrapper for a single relation sharing an endpoint."""
+    @property
+    def _relation(self) -> "OpsRelation":
+        return self._relations[0]
+
+    @property
+    def relation(self) -> Relation[_A, _B, _C, _D]:
+        """All relations currently alive on this charm."""
+        return self.wrap(self._relation)
+
+    @property
+    def current(self):
+        # for compatibility with _Endpoint
+        return self.relation
+
+    @property
+    def _remote_units_data_valid(self):
+        """Whether the `remote_units` side of this relation is valid."""
+        return self.relation._remote_units_data_valid
+
+    @property
+    def _remote_apps_data_valid(self):
+        """Whether the `remote_apps` side of this relation is valid."""
+        return self.relation._remote_app_data_valid
+
+    @property
+    def _local_units_data_valid(self):
+        """Whether the `local_unit` side of this relation is valid."""
+        if not self.relation:
+            return None
+        return self.relation._local_unit_data_valid
+
+    @property
+    def _local_apps_data_valid(self):
+        """Whether the `local_app` side of this relation is valid."""
+        if not self.relation:
+            return None
+        return self.relation._local_app_data_valid
+
+    @property
+    def remote_valid(self):
+        """Whether the `remote` side of this relation is valid."""
+        if not self.relation:
+            return None
+        return self.relation.remote_valid
+
+    @property
+    def local_valid(self):
+        """Whether the `local` side of this relation is valid."""
+        if not self.relation:
+            return None
+        return self.relation.local_valid
+
+    @property
+    def valid(self):
+        """Whether this relation as a whole is valid."""
+        if not self.relation:
+            return None
+        return self.relation.valid
+
+    @property
+    def local_app_data(
+        self,
+    ) -> _A:  # real type: DataWrapper[_A]
+        """Get the local application databag."""
+        if not self.relation:
+            return {}  # type: ignore
+        return self.relation.local_app_data
+
+    @property
+    def local_unit_data(
+        self,
+    ) -> _B:  # real type: DataWrapper[_B]
+        """Get the local unit databag."""
+        if not self.relation:
+            return {}  # type: ignore
+        return self.relation.local_unit_data
+
+    @property
+    def remote_app_data(
+        self,
+    ) -> _C:  # real type: DataWrapper[_C]
+        """Get the remote app's databag."""
+        if not self.relation:
+            return {}  # type: ignore
+        return self.relation.remote_app_data
+
+    @property
+    def remote_units_data(
+        self,
+    ) -> Dict["Unit", _D]:  # real type: Dict["Unit", DataWrapper[_D]]
+        """Get the data from the `remote_units` side of the relation.
+
+        A mapping from remote units to their databags."""
+        if not self.relation:
+            return {}
+        return dict(self.relation.remote_units_data)
+
+
+class _Endpoint(EndpointWrapper[_A, _B, _C, _D]):
+    """Wrapper for a group of relations sharing an endpoint."""
+    _wrapped_event = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, handler in self._event_handlers.items():
+            if not handler:
+                continue
+            event = getattr(self._charm.on[self._relation_name], name)
+            self._charm.framework.observe(event, self._wrap_event)
 
     def _wrap_event(self, event: RelationEvent):
         """Assign event to self._wrapped_event and call the registered handler."""
@@ -815,7 +957,6 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
                 handler(event)
                 break
         self._wrapped_event = None
-
     @property
     def current(self) -> Relation[_A, _B, _C, _D]:
         """Access the currently wrapped relation.
@@ -840,26 +981,6 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             )
         return self.wrap(self._wrapped_event.relation)
 
-    def publish_defaults(self, event):
-        """Publish default unit and app data to local databags.
-
-        Should be called once a relation is created.
-        """
-        relation = self.wrap(event.relation)
-        if self._charm.unit.is_leader():
-            self._publish_defaults(relation.local_app_data)
-        self._publish_defaults(relation.local_unit_data)
-
-    # todo: wrap events before emitting them forward
-    def wrap(self, relation: "OpsRelation") -> Relation[_A, _B, _C, _D]:
-        """Get the Relation wrapper object from an ops.model.Relation object."""
-        return next(filter(lambda r: r.wraps(relation), self.relations))
-
-    @property
-    def _relations(self) -> Tuple["OpsRelation", ...]:
-        relations = self._model.relations.get(self._relation_name)
-        return tuple(relations) if relations else ()
-
     @property
     def relations(self) -> Tuple[Relation[_A, _B, _C, _D], ...]:
         """All relations currently alive on this charm."""
@@ -879,40 +1000,50 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
     @property
     def _remote_units_data_valid(self):
         """Whether the `remote_units` side of this relation is valid."""
+        if not self.relations:
+            return None
         return get_worst_case(r._remote_units_data_valid for r in self.relations)
 
     @property
     def _remote_apps_data_valid(self):
         """Whether the `remote_apps` side of this relation is valid."""
+        if not self.relations:
+            return None
         return get_worst_case(r._remote_app_data_valid for r in self.relations)
 
     @property
     def _local_units_data_valid(self):
         """Whether the `local_unit` side of this relation is valid."""
         if not self.relations:
-            return True
+            return None
         return get_worst_case(map(lambda r: r._local_unit_data_valid, self.relations))
 
     @property
     def _local_apps_data_valid(self):
         """Whether the `local_app` side of this relation is valid."""
         if not self.relations:
-            return True
+            return None
         return get_worst_case(map(lambda r: r._local_app_data_valid, self.relations))
 
     @property
     def remote_valid(self):
         """Whether the `remote` side of this relation is valid."""
+        if not self.relations:
+            return None
         return get_worst_case(map(lambda r: r.remote_valid, self.relations))
 
     @property
     def local_valid(self):
         """Whether the `local` side of this relation is valid."""
+        if not self.relations:
+            return None
         return get_worst_case(map(lambda r: r.local_valid, self.relations))
 
     @property
     def valid(self):
         """Whether this relation as a whole is valid."""
+        if not self.relations:
+            return None
         return get_worst_case(map(lambda r: r.valid, self.relations))
 
     @property
@@ -938,6 +1069,8 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         self,
     ) -> Dict["Application", _C]:  # real type: Dict["Application", DataWrapper[_C]]
         """Get the data from the `remote_apps` side of the relation."""
+        if not self.relations:
+            return {}
         return {r.remote_app: r.remote_app_data for r in self.relations}
 
     @property
@@ -949,21 +1082,6 @@ class _Endpoint(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         for r in self.relations:
             data.update(r.remote_units_data)
         return data
-
-    @staticmethod
-    def _publish_defaults(
-        data: Union[_A, _B, _C, _D]
-    ):  # real type: DataWrapper[Union[_A, _B, _C, _D]]
-        """Write the databags with the template defaults."""
-        if isinstance(data, dict):  # fixme: hacky
-            return
-
-        data = typing.cast(DataWrapper, data)
-        assert data.__datawrapper_params__.can_write
-        if model := data.__datawrapper_params__.model:
-            defaults = get_defaults(model)
-            for key, value in defaults.items():
-                data[key] = value
 
 
 def get_defaults(model: Any) -> Dict[str, Any]:
@@ -993,6 +1111,15 @@ def _get_pydantic_defaults(model: Any) -> Dict[str, Any]:
 
 # fmt: off
 @overload
+def SingularEndpoint(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint[_C, _D, _A, _B]: ...
+# template and provider role
+@overload
+def SingularEndpoint(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint[_A, _B, _C, _D]: ...
+# no template, no role
+@overload
+def SingularEndpoint(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint: ...
+
+@overload
 def Endpoint(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint[_C, _D, _A, _B]: ...
 # template and provider role
 @overload
@@ -1004,7 +1131,7 @@ def Endpoint(charm: CharmBase, relation_name: str, *, template: None = None, val
 
 
 def Endpoint(*args, **kwargs):  # noqa: N802
-    """Encapsulates the relation between the local application and a remote one.
+    """Encapsulates the relations between the local application and a remote one.
     Usage:
 
     >>> # make a dataclass, or inherit from pydantic.BaseModel
@@ -1033,3 +1160,35 @@ def Endpoint(*args, **kwargs):  # noqa: N802
     >>>             self.do_stuff()  # noqa
     """
     return _Endpoint(*args, **kwargs)
+
+
+def SingularEndpoint(*args, **kwargs):  # noqa: N802
+    """Encapsulates a single relation between the local application and a remote one.
+    Usage:
+
+    >>> # make a dataclass, or inherit from pydantic.BaseModel
+    >>> class MyDataModel:
+    >>>     foo: int
+    >>>     bar: str
+    >>>     baz: SomeOtherModel  # noqa
+    >>>
+    >>> template = Template(provider=DataBagModel(app=MyDataModel))
+    >>>
+    >>> class MyCharm(CharmBase):
+    >>>     def __init__(self, *args):
+    >>>         super().__init__(*args)
+    >>>         self._ingress = SingularEndpoint(
+    ...             self, 'ingress',
+    ...             provider_template=template,
+    ...             on_joined=self._on_ingress_joined,
+    ...         )
+    >>>     def _on_ingress_joined(self, event):
+    >>>         relation = self._ingress
+    >>>         if relation.remote_valid:
+    >>>             # remote apps in the clear!
+    >>>             self.do_stuff()  # noqa
+    >>>         if relation.valid:
+    >>>             # all clear!
+    >>>             self.do_stuff()  # noqa
+    """
+    return _SingularEndpoint(*args, **kwargs)
