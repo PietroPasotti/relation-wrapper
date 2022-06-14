@@ -32,11 +32,11 @@ def pyright_check_inversion() -> None:
     Prov_DBM = DataBagModel(unit=RUM, app=RAM)
     Req_DBM = DataBagModel(unit=LUM, app=LAM)
     template = Template(provider=Prov_DBM, requirer=Req_DBM)
-    foo: _Endpoint[Type[LAM], Type[LUM], Type[RAM], Type[RUM]] = Endpoint(
+    foo: _Endpoint[LAM, LUM, RAM, RUM] = Endpoint(
         charm, "relation_name", requirer_template=template
     )
     inverted: _Endpoint[
-        Type[RAM], Type[RUM], Type[LAM], Type[LUM]
+        RAM, RUM, LAM, LUM
     ] = Endpoint(charm, "relation_name", provider_template=template)
 
 
@@ -67,18 +67,18 @@ def pyright_check_attr_types() -> None:
     valid = relation._remote_app_data_valid
 
     # LOCAL: so requirer
-    local_app_data: Type[LAM] = relation.local_app_data
+    local_app_data: LAM = relation.local_app_data
     value_foo_LAM: int = local_app_data.foo
 
-    local_unit_data: Type[LUM] = relation.local_unit_data
+    local_unit_data: LUM = relation.local_unit_data
     value_foo_LUM: str = local_unit_data.foo
 
-    remote_unit_data: Type[RUM] = relation.remote_units_data[relation.remote_units[0]]
+    remote_unit_data: RUM = relation.remote_units_data[relation.remote_units[0]]
     value_foo_RUM: float = remote_unit_data.foo
 
-    remote_app_data: Type[RAM] = relation.remote_app_data
+    remote_app_data: RAM = relation.remote_app_data
     value_foo_RAM = (
-        remote_app_data.foo  # pyright: expect-error Cannot access member "foo" for type "Type[RAM]"
+        remote_app_data.foo  # pyright: expect-error Cannot access member "foo" for type "RAM"
     )
     value_bar_RAM: str = remote_app_data.bar
 
@@ -148,7 +148,7 @@ def pyright_check_pydantic_model() -> None:
     # We are the requirer, and our template says that the local app data
     # model for the requirer is RequirerAppModel; so we expect
     # local_app_data to be a DataWrapper[RequirerAppModel] so actually:
-    data: Type[RequirerAppModel] = foo.relations[0].local_app_data
+    data: RequirerAppModel = foo.relations[0].local_app_data
 
 
 def pyright_check_singular():
@@ -175,7 +175,7 @@ def pyright_check_singular():
     foo = SingularEndpoint(charm, "relation_name", requirer_template=template)
     assert isinstance(foo, _SingularEndpoint)
     foo.local_unit_data.foo
-    foo.local_unit_data.bar # pyright: expect-error
+    foo.local_unit_data.bar  # pyright: expect-error
 
 
 def test_with_pyright():
