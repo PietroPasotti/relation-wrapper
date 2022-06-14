@@ -84,7 +84,8 @@ def test_wrapped_events(charm):
     charm.foo._model.relations._data['foo'] = (relation, )
 
     def assert_wrapped(self, event):
-        assert self.foo.current.relation is relation
+        assert self.foo.current.relation.name == 'foo'
+        assert self.foo.current.relation.id == 1
 
     charm._callback = assert_wrapped
 

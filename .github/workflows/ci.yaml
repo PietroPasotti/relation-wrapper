@@ -27,7 +27,7 @@ jobs:
       - name: Run tests
         run: tox -e pydantic no-pydantic
   static:
-    name: Unit tests
+    name: Static code check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -62,7 +62,7 @@ def pyright_check_attr_types() -> None:
     Req_DBM = DataBagModel(unit=LUM, app=LAM)
     template = Template(provider=Prov_DBM, requirer=Req_DBM)
     foo = Endpoint(charm, "relation_name", requirer_template=template)
-    relation = foo.wrap(charm.model.relations[0])
+    relation = foo.wrap(charm.model.relations['relation_name'][0])
 
     valid = relation._remote_app_data_valid
 
@@ -93,7 +93,7 @@ def pyright_check_partial_template_requirer() -> None:
     charm = CharmBase(None)  # type: ignore
 
     foo_req = Endpoint(charm, "relation_name", requirer_template=template)
-    req_relation = foo_req.wrap(charm.model.relations[0])
+    req_relation = foo_req.wrap(charm.model.relations['relation_name'][0])
     req_remote_unit_data = req_relation.remote_units_data[req_relation.remote_units[0]]
     req_value_foo = req_remote_unit_data.foo
     req_value_bar = req_remote_unit_data.bar
@@ -109,7 +109,7 @@ def pyright_check_partial_template_provider() -> None:
     charm = CharmBase(None)  # type: ignore
 
     foo_prov = Endpoint(charm, "relation_name", provider_template=template)
-    prov_relation = foo_prov.wrap(charm.model.relations[0])
+    prov_relation = foo_prov.wrap(charm.model.relations['relation_name'][0])
     prov_remote_unit_data = prov_relation.remote_units_data[
         prov_relation.remote_units[0]
     ]
