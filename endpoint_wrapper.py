@@ -760,6 +760,8 @@ def get_worst_case(validity: Iterable[Optional[bool]]) -> Optional[bool]:
 
 
 class EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
+    """EndpointWrapper."""
+
     def __init__(
         self,
         charm: CharmBase,
@@ -788,7 +790,7 @@ class EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
         self._validator = validator
 
         # register all provided event handlers
-        self._event_handlers = event_handlers = {
+        self._event_handlers = {
             "relation_joined": kwargs.get("on_joined"),
             "relation_changed": kwargs.get("on_changed"),
             "relation_broken": kwargs.get("on_broken"),
@@ -813,11 +815,11 @@ class EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
     def wrap(self, relation: "OpsRelation") -> Relation[_A, _B, _C, _D]:
         """Get the Relation wrapper object from an ops.model.Relation object."""
         return Relation(
-                charm=self._charm,
-                relation=relation,
-                model=self._relation_model,
-                validator=self._validator,
-            )
+            charm=self._charm,
+            relation=relation,
+            model=self._relation_model,
+            validator=self._validator,
+        )
 
     @property
     def _relations(self) -> Tuple["OpsRelation", ...]:
@@ -838,6 +840,7 @@ class EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             defaults = get_defaults(model)
             for key, value in defaults.items():
                 data[key] = value
+
 
 class _SingularEndpoint(EndpointWrapper[_A, _B, _C, _D]):
     """Wrapper for a single relation sharing an endpoint."""
@@ -941,7 +944,8 @@ class _SingularEndpoint(EndpointWrapper[_A, _B, _C, _D]):
     ) -> Dict["Unit", _D]:  # real type: Dict["Unit", DataWrapper[_D]]
         """Get the data from the `remote_units` side of the relation.
 
-        A mapping from remote units to their databags."""
+        A mapping from remote units to their databags.
+        """
         if not self.relation:
             return {}
         return dict(self.relation.remote_units_data)
@@ -949,6 +953,7 @@ class _SingularEndpoint(EndpointWrapper[_A, _B, _C, _D]):
 
 class _Endpoint(EndpointWrapper[_A, _B, _C, _D]):
     """Wrapper for a group of relations sharing an endpoint."""
+
     _wrapped_event = None
 
     def __init__(self, *args, **kwargs):
@@ -971,6 +976,7 @@ class _Endpoint(EndpointWrapper[_A, _B, _C, _D]):
                 handler(event)
                 break
         self._wrapped_event = None
+
     @property
     def current(self) -> Relation[_A, _B, _C, _D]:
         """Access the currently wrapped relation.
@@ -1125,22 +1131,21 @@ def _get_pydantic_defaults(model: Any) -> Dict[str, Any]:
 
 # fmt: off
 @overload
-def SingularEndpoint(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint[_C, _D, _A, _B]: ...
+def SingularEndpoint(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint[_C, _D, _A, _B]: ...  # noqa
 # template and provider role
 @overload
-def SingularEndpoint(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint[_A, _B, _C, _D]: ...
+def SingularEndpoint(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint[_A, _B, _C, _D]: ...  # noqa
 # no template, no role
 @overload
-def SingularEndpoint(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint: ...
-
+def SingularEndpoint(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _SingularEndpoint: ...  # noqa
 @overload
-def Endpoint(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint[_C, _D, _A, _B]: ...
+def Endpoint(charm: CharmBase, relation_name: str, *, requirer_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint[_C, _D, _A, _B]: ...  # noqa
 # template and provider role
 @overload
-def Endpoint(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint[_A, _B, _C, _D]: ...
+def Endpoint(charm: CharmBase, relation_name: str, *, provider_template: _Template[_DataBagModel[_A, _B], _DataBagModel[_C, _D]], validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint[_A, _B, _C, _D]: ...  # noqa
 # no template, no role
 @overload
-def Endpoint(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint: ...
+def Endpoint(charm: CharmBase, relation_name: str, *, template: None = None, validator: Optional[Type['_Validator']] = None, on_joined: Optional[Callable] = None, on_changed: Optional[Callable] = None, on_broken: Optional[Callable] = None, on_departed: Optional[Callable] = None, on_created: Optional[Callable] = None) -> _Endpoint: ...  # noqa
 # fmt: on
 
 
