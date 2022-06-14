@@ -230,6 +230,10 @@ class UnboundEndpointError(EndpointError):
     """Raised when an unbound endpoint is asked to access the current relation."""
 
 
+class NoCurrentRelation(EndpointError):
+    """Raised when the current event has no .relation."""
+
+
 class TooManyRelations(EndpointError):
     """Raised when a SingularEndpoint has more than 1 relations."""
 
@@ -999,7 +1003,12 @@ class _Endpoint(EndpointWrapper[_A, _B, _C, _D]):
                 "unbound endpoint: you can access this attribute "
                 "only within the context of a wrapped event"
             )
-        return self.wrap(self._wrapped_event.relation)
+        if not self._wrapped_event.relation:
+            raise NoCurrentRelation(
+                f"The wrapped event {self._wrapped_event} has no `.relation`."
+            )
+        ops_relation = typing.cast(OpsRelation, self._wrapped_event.relation)
+        return self.wrap(ops_relation)
 
     @property
     def relations(self) -> Tuple[Relation[_A, _B, _C, _D], ...]:
