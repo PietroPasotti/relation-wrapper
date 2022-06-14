@@ -1007,7 +1007,7 @@ class _Endpoint(EndpointWrapper[_A, _B, _C, _D]):
             raise NoCurrentRelation(
                 f"The wrapped event {self._wrapped_event} has no `.relation`."
             )
-        ops_relation = typing.cast('OpsRelation', self._wrapped_event.relation)
+        ops_relation = typing.cast("OpsRelation", self._wrapped_event.relation)
         return self.wrap(ops_relation)
 
     @property
