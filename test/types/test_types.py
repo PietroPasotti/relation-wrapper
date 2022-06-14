@@ -174,7 +174,8 @@ def pyright_check_singular():
     template = Template(provider=Prov_DBM, requirer=Req_DBM)
     foo = SingularEndpoint(charm, "relation_name", requirer_template=template)
     assert isinstance(foo, _SingularEndpoint)
-    data = foo.local_unit_data.foo
+    foo.local_unit_data.foo
+    foo.local_unit_data.bar # pyright: expect-error
 
 
 def test_with_pyright():

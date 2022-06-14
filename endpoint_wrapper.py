@@ -230,6 +230,13 @@ class UnboundEndpointError(EndpointError):
     """Raised when an unbound endpoint is asked to access the current relation."""
 
 
+class TooManyRelations(EndpointError):
+    """Raised when a SingularEndpoint has more than 1 relations."""
+
+    def __init__(self, relation_name: str) -> None:
+        super().__init__(f"Too many relations bound to {relation_name}")
+
+
 def _loads(method):
     @wraps(method)
     def wrapper(self: "PydanticValidator", *args, **kwargs):
@@ -832,11 +839,18 @@ class EndpointWrapper(_RelationBase, Object, Generic[_A, _B, _C, _D]):
             for key, value in defaults.items():
                 data[key] = value
 
-
 class _SingularEndpoint(EndpointWrapper[_A, _B, _C, _D]):
     """Wrapper for a single relation sharing an endpoint."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if len(self._relations) > 1:
+            raise TooManyRelations(self._relation_name)
+
     @property
     def _relation(self) -> "OpsRelation":
+        if not self._relations:
+            raise UnboundEndpointError(self._relation_name)
         return self._relations[0]
 
     @property
